@@ -3,24 +3,28 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "microvm-cdk"
+name = "lambda-microvm-cdk"
 version = "0.0.0"
 description = "Reusable AWS CDK (Python) construct for provisioning AWS Lambda MicroVM images and launchers."
 readme = "README.md"
 license = "MIT-0"
-requires-python = ">=3.14"
+requires-python = ">=3.11"
 authors = [{ name = "Ran Isenberg", email = "isenberg.ran@gmail.com" }]
 keywords = ["aws", "cdk", "lambda", "microvm", "firecracker", "construct"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT No Attribution License (MIT-0)",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
     "aws-cdk-lib>=2.150.0,<3.0.0",
     "constructs>=10.0.0,<11.0.0",
+    "boto3>=1.40.0",
 ]
 
 [dependency-groups]
@@ -31,16 +35,17 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ran-isenberg/microvm-cdk"
-Repository = "https://github.com/ran-isenberg/microvm-cdk"
-Issues = "https://github.com/ran-isenberg/microvm-cdk/issues"
+Homepage = "https://github.com/ran-isenberg/lambda-microvm-cdk-python"
+Repository = "https://github.com/ran-isenberg/lambda-microvm-cdk-python"
+Documentation = "https://ran-isenberg.github.io/lambda-microvm-cdk-python/"
+Issues = "https://github.com/ran-isenberg/lambda-microvm-cdk-python/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/microvm_cdk"]
+packages = ["src/lambda_microvm_cdk"]
 
 [tool.ruff]
 line-length = 150
-target-version = "py314"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "C", "B"]
@@ -51,5 +56,5 @@ quote-style = "single"
 indent-style = "space"
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.11"
 strict = true

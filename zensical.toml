@@ -1,0 +1,53 @@
+[site]
+name = "lambda-microvm-cdk"
+description = "Reusable AWS CDK construct for AWS Lambda MicroVMs"
+author = "Ran Isenberg"
+url = "https://ran-isenberg.github.io/lambda-microvm-cdk-python/"
+repo = "https://github.com/ran-isenberg/lambda-microvm-cdk-python"
+docs_dir = "docs"
+
+[theme]
+variant = "classic"
+font = "Ubuntu"
+
+[[theme.palette]]
+scheme = "default"
+primary = "blue"
+accent = "blue"
+
+[[theme.palette]]
+scheme = "slate"
+primary = "indigo"
+accent = "teal"
+
+theme.features = [
+    "navigation.sections",
+    "navigation.top",
+    "content.code.annotate",
+    "content.code.copy",
+    "search.suggest",
+    "search.highlight",
+]
+
+[markdown]
+extensions = [
+    "admonition",
+    "pymdownx.details",
+    "pymdownx.superfences",
+    "pymdownx.tabbed",
+    "pymdownx.emoji",
+    "toc",
+]
+
+# Mermaid diagrams via superfences custom fence
+[[markdown.superfences]]
+name = "mermaid"
+class = "mermaid"
+
+[nav]
+Home = "index.md"
+"Getting Started" = "getting_started.md"
+"API" = "api.md"
+"Security" = "security.md"
+"Pipeline" = "pipeline.md"
+"Changelog" = "changelog.md"
