@@ -157,34 +157,18 @@ wheels = [
 ]
 
 [[package]]
-name = "cdk-lambda-microvm"
-version = "0.0.0"
-source = { editable = "." }
+name = "cdk-nag"
+version = "3.0.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aws-cdk-lib" },
-    { name = "boto3" },
     { name = "constructs" },
+    { name = "jsii" },
+    { name = "publication" },
 ]
-
-[package.dev-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aws-cdk-lib", specifier = ">=2.150.0,<3.0.0" },
-    { name = "boto3", specifier = ">=1.40.0" },
-    { name = "constructs", specifier = ">=10.0.0,<11.0.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy", specifier = ">=1.11" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "ruff", specifier = ">=0.6" },
+sdist = { url = "https://files.pythonhosted.org/packages/87/8d/7c98ad8a867925ba1ac7693dd4f74525def8459abb5a4fcef7731496f5be/cdk_nag-3.0.1.tar.gz", hash = "sha256:82db3c3383bbc6ab5e68f55cad688a04b02c9f37cc9e8de566d93b080a2efa87", size = 734645, upload-time = "2026-06-15T07:52:13.636Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1d/bc/6e4116dad5ae0d2157c39373adcbdd86313822e499da499afefe43b892a5/cdk_nag-3.0.1-py3-none-any.whl", hash = "sha256:b32b77e6ad29501231ed3a99f36f29670e85a587617fc05b554ff2f305243186", size = 732361, upload-time = "2026-06-15T07:52:10.861Z" },
 ]
 
 [[package]]
@@ -243,6 +227,39 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/33/a8/a27839ee67130e3b911ebcd2f27c9d539fae2dd4ea2e87678c19b7a48685/jsii-1.138.0.tar.gz", hash = "sha256:575a389c56e4651f33fad0e0dafdc61d001a499d3cc0630cee734fc5e0b525ae", size = 531368, upload-time = "2026-07-02T13:42:11.264Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/11/c2/9198f328f95b8bbb946de5e5b4551316818c92167893a3b8343879f0e1e4/jsii-1.138.0-py3-none-any.whl", hash = "sha256:efc66b5831c8c41e343b644f03221d71480b69c3c39dc41df15659a01ce28fbb", size = 501697, upload-time = "2026-07-02T13:42:09.704Z" },
+]
+
+[[package]]
+name = "lambda-microvm-cdk"
+version = "0.0.0"
+source = { editable = "." }
+dependencies = [
+    { name = "aws-cdk-lib" },
+    { name = "boto3" },
+    { name = "constructs" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "cdk-nag" },
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aws-cdk-lib", specifier = ">=2.150.0,<3.0.0" },
+    { name = "boto3", specifier = ">=1.40.0" },
+    { name = "constructs", specifier = ">=10.0.0,<11.0.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "cdk-nag", specifier = ">=2" },
+    { name = "mypy", specifier = ">=1.11" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "ruff", specifier = ">=0.6" },
 ]
 
 [[package]]

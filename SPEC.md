@@ -26,9 +26,23 @@ All four original blockers were checked against boto3 `1.43.46` and the CloudFor
 
 Networking (§5.5), monitoring/logging (§5.6), and the AWS best-practices guidance (§5.8) have been read and folded into the construct's defaults and inputs.
 
+### Phase-2.0 spike — run end-to-end 2026-07-11 (raw boto3, then torn down)
+
+Hand-built a real image + ran a real VM in `us-east-1` to convert "should work" into observed fact:
+
+| Step | Result |
+|------|--------|
+| Image build (base `al2023-1` + `FROM public.ecr.aws/docker/library/python:3.13-slim` + `pip install boto3`) | ✅ `CREATED` in **~165s**; user image version starts at **`"1.0"`** (distinct from base version `"0"`) |
+| `RunMicrovm` → `RUNNING` | ✅ ~15s |
+| Auth token → ingress → endpoint | ✅ token map key is exactly **`X-aws-proxy-auth`**; `/health` 200 **without** implementing the `/run` hook (hooks disabled ⇒ traffic flows immediately) |
+| **`/echo` deterministic assertion** | ✅ **PASSED** — full path build→run→auth→ingress→app proven |
+| **`/bedrock` (in-VM execution-role → Bedrock)** | ❌ **HTTP 500 — still unproven.** Spike didn't capture the error body (bug), so the *reason* is unknown (candidates: in-VM credential chain, region, or inference-profile invoke perms). Deferred by user; revisit with error capture. |
+
+**Other confirmed facts:** `environmentVariables` key **`AWS_REGION` is reserved** — `CreateMicrovmImage` rejects it (the runtime injects region); set only non-reserved keys. `DeleteMicrovmImage` fails while a MicroVM is running (`Cannot delete microvm image with running microvms`) → **terminate before deleting the image** (matters for the CR delete ordering, §8, and any teardown). All spike resources were deleted; no zombies.
+
 **Remaining unknowns (not blockers):** regional availability outside `us-east-1`; whether `aws_ec2_alpha` VpcV2 API is stable enough to pin; exact `AWS::Lambda::MicrovmImage` nested-property casing for `Hooks` (top-level props registry-confirmed). See §14.
 
-**Net effect on confidence: buildability ~9/10.** Every load-bearing mechanism is verified against the live API; the Bedrock Opus 4.8 model id (used for both the main and background model slots), networking, monitoring, and best-practices are pinned. The former first-try risk (Claude agent in a microVM) is de-risked by tiering the sample worker (§11): the library E2E depends only on a no-model echo tier, "Claude on Bedrock" is a one-call SDK tier, and the finicky Claude Code CLI is an opt-in tier that gates nothing — plus a Phase-2.0 spike (§15) proves the path before construct code is written.
+**Net effect on confidence:** the **core library path is now PROVEN, not just plausible** — the Phase-2.0 spike built a real image, ran a real VM, and passed the deterministic `/echo` assertion end-to-end (build → run → auth → ingress → app). The **in-VM Bedrock call failed (500, reason uncaptured)** and remains the one unproven item — but it only affects the *sample's* agent tier, which the library E2E deliberately does not depend on (echo tier). So: **library buildability ~9.5/10; sample "Claude on Bedrock" first-try currently unproven (~6/10) pending a diagnostic re-run.**
 
 ---
 
@@ -260,6 +274,30 @@ Every AWS knob is reachable, but the construct ships opinionated, secure default
 - **Cost**: idle policy + `maximumDurationInSeconds` always set; `suspendedDurationSeconds` auto-terminates; tags for cost allocation; docs recommend deleting stale image versions.
 - **Monitoring**: exec role has logs perms by default; the caller surfaces `stateReason`.
 
+### 5.9 cdk-nag — AWS-recommended checks at synth
+
+Every synth is validated against AWS security best practices with the cdk-nag **`AwsSolutionsChecks`**
+pack (the AWS-recommended rule set), applied as a CDK Aspect on the app:
+
+```python
+from aws_cdk import App, Aspects
+from cdk_nag import AwsSolutionsChecks
+
+app = App()
+# ... add stacks ...
+Aspects.of(app).add(AwsSolutionsChecks(verbose=True))
+```
+
+- **Runs at synth** → `make synth` and the unit tests **fail on any `AwsSolutions-*` finding**, so
+  misconfigurations are caught *before* `cdk deploy` — that's how we know a deployment is compliant.
+- A unit test asserts **no unsuppressed** `AwsSolutions-*` errors (via
+  `Annotations.from_stack(stack).find_error(...)`).
+- Any exception uses `NagSuppressions.add_resource_suppressions(...)` with an explicit **id + written
+  justification**; suppressions are reviewed, never blanket.
+- `cdk-nag` is a **dev/app** dependency (used by the sample app + tests), **not** a runtime dependency
+  of the published construct — consumers apply their own nag packs. Stricter packs (HIPAA/NIST/PCI)
+  can be layered by consumers; the repo standard is `AwsSolutionsChecks`.
+
 ---
 
 ## 6. Repository layout
@@ -377,7 +415,8 @@ uv-based, mirrors [aws-lambda-handler-cookbook/Makefile](https://github.com/ran-
 
      ```
      CLAUDE_CODE_USE_BEDROCK=1
-     AWS_REGION=us-east-1
+     # AWS_REGION is a RESERVED image env key (CreateMicrovmImage rejects it, §0) — the runtime
+     # injects it (= the region run_microvm was called in). Do NOT set it as an image env var.
      ANTHROPIC_MODEL=us.anthropic.claude-opus-4-8               # main model — inference profile (validated ACTIVE)
      ANTHROPIC_SMALL_FAST_MODEL=us.anthropic.claude-opus-4-8    # Opus 4.8 for the background/small slot too (no Haiku)
      CLAUDE_CODE_MAX_OUTPUT_TOKENS=4096
@@ -400,7 +439,9 @@ uv-based, mirrors [aws-lambda-handler-cookbook/Makefile](https://github.com/ran-
 ## 12. Testing strategy
 
 1. **Unit (fast, no AWS):** `aws_cdk.assertions.Template.from_stack()` — assert `AWS::Lambda::MicrovmImage` present with all required props, `BaseImageVersion` resolved (boto3 **mocked**), least-priv build-role scoped to the asset key (not `*`), `CodeArtifact.Uri` wired, secure defaults (`os_capabilities=[]`, CloudWatch), and that validation errors raise. `test_synth_stack.py` synths a minimal internal stack (Phase 1 exit gate — independent of the sample). Dedicated `test_security.py`.
-2. **Synth smoke:** `make synth` in CI (cached context / `"0"` fallback).
+2. **Synth smoke + cdk-nag:** `make synth` in CI (cached context / `"0"` fallback); the
+   `AwsSolutionsChecks` aspect (§5.9) runs at synth and **fails on any `AwsSolutions-*` finding**, and
+   a unit test asserts none are unsuppressed.
 3. **E2E (gated, real AWS) — pytest fixture drives the runtime via boto3:** `make deploy` → the fixture reads the **CloudFormation stack outputs** (`MicrovmImageArn`, `MicrovmExecutionRoleArn`, `IngressConnectorArn`, `EgressConnectorArn`) → polls image `CREATED` → `run_microvm(... maximumDurationInSeconds=<low backstop>)` → polls `RUNNING` → `create_microvm_auth_token(allowedPorts=[{port:8080}], expirationInMinutes=…)` → `requests.get(endpoint, headers={"X-aws-proxy-auth": token})` with a **prompt, asserts the result** (deterministic echo tier, §11) → **`terminate_microvm` in the fixture teardown / `try-finally`** (running VMs are runtime resources, *not* in the CFN stack, so `cdk destroy` alone won't terminate them) → `make destroy`. No launcher Lambda / API Gateway / WAF involved — just the deployed image + boto3. Gated behind an env flag + AWS creds. E2E is the only real-AWS tier (renamed from "integration").
 
 ```python
@@ -429,7 +470,7 @@ def running_microvm(stack_outputs):
 ## 13. Packaging & PyPI (Stage 2)
 
 - **Name:** `lambda-microvm-cdk` (module `lambda_microvm_cdk`). **Pure Python.** `requires-python = ">=3.11"` (authored on 3.14). Deps: `aws-cdk-lib`, `constructs`, `boto3`.
-- **Tooling:** uv (`uv.lock`), ruff (line-length 150, single quotes, `E,W,F,I,C,B`), mypy strict, hatchling — matching [aws-lambda-env-modeler](https://github.com/ran-isenberg/aws-lambda-env-modeler). **License MIT-0.**
+- **Tooling:** uv (`uv.lock`), ruff (line-length 150, single quotes, `E,W,F,I,C,B`), mypy strict, hatchling — matching [aws-lambda-env-modeler](https://github.com/ran-isenberg/aws-lambda-env-modeler). `cdk-nag` is a **dev** dependency (not a runtime dep of the published wheel; §5.9). **License MIT-0.**
 - **Publish:** `release.yml` on tag `v*` → sdist+wheel → **PyPI Trusted Publishing (OIDC)**; TestPyPI dry-run first. SemVer, `0.x` during Stage 1.
 
 ---
@@ -448,7 +489,7 @@ def running_microvm(stack_outputs):
 - **Phase 0 — Bootstrap** ✅: git, SPEC, README, LICENSE (MIT-0), pyproject (uv/ruff/boto3), package skeleton.
 - **Phase 1 — Image construct:** `MicrovmImage`, `MicrovmSource`, least-priv build role, boto3 version context provider, `types/props`, `overrides` escape hatch; unit + security tests; minimal synth test stack green; Makefile; docs skeleton + zensical.
 - **Phase 2 — Sample image + boto3-driven E2E:**
-  - **2.0 De-risking spike (do first):** by hand — zip a trivial image, `CreateMicrovmImage`, poll `CREATED`, `RunMicrovm`, mint a token, `curl` the echo endpoint, and make one `AnthropicBedrockMantle` call from a throwaway VM. Proves the end-to-end path (image build, run, auth, egress, Bedrock creds) *before* committing construct code. ~30 min.
+  - **2.0 De-risking spike** ✅ **done 2026-07-11** (§0): build→run→auth→ingress→`/echo` proven end-to-end on real AWS; **in-VM Bedrock `/bedrock` returned 500 and is still unproven** (diagnostic re-run deferred). Resources torn down, no zombies.
   - **2.1** least-priv VM execution role + connector/idle helpers + `CfnOutput`s; `microvm_app/` (Dockerfile + `/run`-hook worker: echo + Bedrock tiers; CLI tier opt-in); `sample_stack.py`; **E2E pytest fixture drives `run_microvm` via boto3 from stack outputs** → prompt (echo) with guaranteed terminate; `make deploy` / `make e2e` / `make destroy`.
 - **Phase 3 — VPC egress + hardening:** `AWS::Lambda::NetworkConnector` + `aws_ec2_alpha` VpcV2 (2 AZ) behind `EgressConnector.vpc(...)`; security tests.
 - **Phase 4 — Custom resource (maybe):** resolve §8 update semantics; add boot-a-VM CR (would also make `MicrovmId`/`MicrovmEndpoint` deploy-time outputs, §4.5).
