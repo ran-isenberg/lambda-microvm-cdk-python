@@ -13,8 +13,8 @@ environments, multi-tenant CI).
 
 - **Package:** `lambda-microvm-cdk` · **Module:** `lambda_microvm_cdk` · **Repo:** `lambda-microvm-cdk-python`
 - **Distribution:** a pure-Python wheel published to PyPI (Stage 2) — consumable by any Python CDK app.
-- **Also ships:** a deployable **sample CDK app** whose MicroVM runs an AI-agent worker on **Amazon
-  Bedrock (Claude Opus 4.8, us-east-1)**, used as the end-to-end test target.
+- **Also ships:** a deployable **sample CDK app** whose MicroVM runs a worker calling **Amazon
+  Bedrock (Nova 2 Lite by default; Opus 4.8 opt-in via `MODEL_PROVIDER`, us-east-1)**, used as the end-to-end test target.
 
 ## 2. Core model — two planes
 
@@ -34,18 +34,20 @@ thin launcher is a deferred, opt-in add-on).
 
 ## 3. Public API (surface)
 
-Only constructs and their typed prop/enum helpers are exported from the package root; everything else
-is private under `_impl/`.
+The public API is the single **`LambdaMicroVM`** construct, exported from the package root;
+supporting internals are private under `_impl/`.
 
-- **`MicrovmImage`** (core) — zips a source asset, uploads to S3, creates a least-privilege build
-  role, resolves the base-image version (boto3, cached in `cdk.context.json`), emits
-  `AWS::Lambda::MicrovmImage`, and exposes CloudFormation outputs (image ARN, VM execution role,
-  connector ARNs, log group name) that the runtime caller/E2E fixture feeds into `run_microvm`.
-- **Typed helpers** — `MicrovmSource` (`from_asset`/`from_asset_zip`/`from_s3`), `Architecture`
-  (`ARM_64` only today), `MicrovmSize`, `LoggingConfig`, `OsCapability`, `IdlePolicy`,
-  `IngressConnector`/`EgressConnector`, `LifecycleHooks`.
-- **Escape hatch** — every construct takes `overrides: dict` merged verbatim into the L1
-  `Properties`, so no consumer is ever blocked on an un-modeled field.
+- **`LambdaMicroVM`** — zips a source (dir with `Dockerfile`, `.zip`, or an `s3_assets.Asset`),
+  uploads to S3, creates least-privilege build + VM-execution roles, resolves the base-image
+  version (boto3 live lookup), emits `AWS::Lambda::MicrovmImage`, and exposes typed **properties**
+  (image ARN, VM execution role, connector ARNs, log group name) that the runtime caller/E2E fixture
+  feeds into `run_microvm`. It emits **no `CfnOutput`s** — the consuming stack (see `sample_stack.py`)
+  owns those, so the construct never pollutes a consumer's template.
+- **No duplicate types** — inputs reuse CDK's own: `aws_lambda.Architecture` (`ARM_64` only
+  today), `aws_logs.RetentionDays`, `aws_s3_assets.Asset`; memory is a plain `memory_mib` int,
+  `hooks` a verbatim CFN dict.
+- **Escape hatch** — `overrides: dict` merged verbatim into the L1 `Properties`, so no consumer
+  is ever blocked on an un-modeled field.
 
 See [SPEC.md](SPEC.md) §4 for the full signatures.
 
@@ -86,7 +88,7 @@ Security is a first-class design goal (details in [SPEC.md](SPEC.md) §5):
 the agent working:
 
 1. **`echo`** — deterministic no-model transform. **This is what E2E asserts on.**
-2. **`bedrock`** — one `AnthropicBedrockMantle` / `invoke_model` call to Claude Opus 4.8.
+2. **`bedrock`** — one Bedrock **Converse** call to Nova 2 Lite (default) or an `AnthropicBedrockMantle` call to Opus 4.8 (opt-in).
 3. **`agent`** — opt-in Claude Code headless (`claude -p`). Highest first-try risk; gates nothing.
 
 Spike status (2026-07-11): tiers "build → run → auth → ingress → echo" are **proven end-to-end** on
@@ -134,7 +136,8 @@ factories).
 
 ## 10. Roadmap
 
-Phase 0 (bootstrap) and the Phase-2.0 spike are done. Next: Phase 1 (the `MicrovmImage` construct +
-unit/security tests), Phase 2 (sample app + boto3 E2E), Phase 3 (VPC egress), Phase 4 (optional boot
-custom resource), Phase 5 (optional launcher), Phase 6 (publish to PyPI). Full detail in
-[SPEC.md](SPEC.md) §15.
+Phase 0 (bootstrap), the Phase-2.0 spike, **Phase 1** (the `MicrovmImage` construct + typed helpers +
+unit/security/nag tests) and **Phase 2.1 code** (sample app + tiered worker + boto3 E2E fixture) are
+done — the sample synthesizes green with cdk-nag; the E2E run against real AWS needs a deploy +
+creds (`make deploy`, then `make e2e`). Next: Phase 3 (VPC egress), Phase 4 (optional boot custom resource),
+Phase 5 (optional launcher), Phase 6 (publish to PyPI). Full detail in [SPEC.md](SPEC.md) §15.

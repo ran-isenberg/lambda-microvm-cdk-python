@@ -10,5 +10,6 @@
 - **cdk-nag `AwsSolutionsChecks`** (AWS-recommended pack) runs at synth on every stack; treat findings
   as failures. A unit test asserts there are **no unsuppressed `AwsSolutions-*` errors**. Any
   `NagSuppressions` entry needs a written justification.
-- `make synth` stays green. **E2E (`make e2e`, real AWS)** is gated behind an env flag + creds, never
-  part of `make unit`/CI's default gate, and always leaves the account clean (see AWS guardrails).
+- `make synth` stays green. **E2E (`make e2e`, real AWS)** lives in `tests/e2e/` and needs AWS creds +
+  a deployed stack; it is **never part of `make unit`/CI's default gate** (that target only runs
+  `tests/unit/`), and always leaves the account clean (see AWS guardrails).
