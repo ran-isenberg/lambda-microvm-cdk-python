@@ -115,7 +115,7 @@ real AWS; the in-VM Bedrock call returned a 500 and is **still unproven** (diagn
 
 | Command | Does |
 |---------|------|
-| `make dev` | `uv sync` + pre-commit hooks |
+| `make dev` | `uv sync` (venv + dev deps) |
 | `make lint` / `make format` | ruff check/format + mypy / auto-fix |
 | `make unit` | unit tests + coverage (no AWS) |
 | `make synth` | `cdk synth` the sample app |

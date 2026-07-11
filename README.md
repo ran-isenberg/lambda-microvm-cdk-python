@@ -50,7 +50,7 @@ tier — so the library's tests never depend on the agent working.
 Uses [uv](https://docs.astral.sh/uv/) and [ruff](https://docs.astral.sh/ruff/) (see the [Makefile](Makefile)).
 
 ```bash
-make dev        # uv sync + pre-commit hooks
+make dev        # uv sync (venv + dev deps)
 make lint       # ruff format --check + ruff check + mypy
 make unit       # unit tests (no AWS)
 make synth      # cdk synth the sample app

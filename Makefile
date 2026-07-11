@@ -1,4 +1,4 @@
-.PHONY: dev lint format format-fix mypy-lint pre-commit unit build synth deploy destroy e2e \
+.PHONY: dev lint format format-fix mypy-lint unit build synth deploy destroy e2e \
         docs docs-serve publish-docs lint-docs complex pr help
 
 PYTHON := uv run
@@ -10,13 +10,11 @@ help:  ## Show this help
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 ## --- Setup ------------------------------------------------------------------
-dev:  ## Create venv, install deps (incl. dev group) and pre-commit hooks
+dev:  ## Create venv and install deps (incl. dev group)
 	uv sync
-	$(PYTHON) pre-commit install
 
-update-deps:  ## Update uv lock, pre-commit hooks and CDK
+update-deps:  ## Update the uv lockfile
 	uv lock --upgrade
-	$(PYTHON) pre-commit autoupdate
 
 ## --- Quality ----------------------------------------------------------------
 format:  ## Auto-fix lint issues and format
@@ -36,9 +34,6 @@ mypy-lint:  ## Static type check
 complex:  ## Report code complexity
 	$(PYTHON) radon cc -e "tests/*,cdk.out/*" src sample
 	$(PYTHON) xenon --max-absolute C --max-modules B --max-average A -e "tests/*,cdk.out/*" src
-
-pre-commit:  ## Run all pre-commit hooks
-	$(PYTHON) pre-commit run --all-files
 
 ## --- Tests ------------------------------------------------------------------
 unit:  ## Unit tests (no AWS) with coverage

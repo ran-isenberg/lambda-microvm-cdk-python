@@ -312,7 +312,7 @@ microvm/                                  # repo root
 ├── Makefile                              # dev + pipeline (§9)
 ├── pyproject.toml                        # uv + hatchling + ruff/mypy; deps incl. boto3
 ├── uv.lock · .python-version (3.14) · .gitignore
-├── zensical.toml · .pre-commit-config.yaml · .markdownlint.yaml
+├── zensical.toml · .markdownlint.yaml
 ├── src/lambda_microvm_cdk/
 │   ├── __init__.py                       # EXPORTS ONLY LambdaMicroVM
 │   ├── microvm.py                        # LambdaMicroVM — the public construct (validation, overrides merge, typed properties)
@@ -375,10 +375,9 @@ uv-based, mirrors [aws-lambda-handler-cookbook/Makefile](https://github.com/ran-
 
 | Target | Purpose |
 |--------|---------|
-| `dev` | `uv sync` + install pre-commit hooks |
+| `dev` | `uv sync` (venv + dev deps) |
 | `lint` | `ruff format --check` + `ruff check` + `mypy` |
 | `format` | `ruff check --fix` + `ruff format` |
-| `pre-commit` | run all hooks |
 | `unit` | unit tests + coverage (no AWS; boto3 mocked) |
 | `build` | `python sample/scripts/build_image.py` (zip artifact) |
 | `synth` | `cdk synth` sample app |
