@@ -10,8 +10,9 @@
 - **Validated facts to honor** (`SPEC.md` §0): `ARM_64` is the only accepted architecture today;
   `AWS_REGION` is a **reserved** image env key (don't set it); user image versions start at `"1.0"`;
   terminate a MicroVM before deleting its image.
-- **Git:** commit or push **only when asked**. Branch off `main`. End commit messages with the
-  `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` trailer. Keep
-  `SPEC.md`/`ARCH.md` in sync with code.
+- **Git:** commit or push **only when asked**. Branch off `main`. Keep `SPEC.md`/`ARCH.md` in sync
+  with code.
+- **Commit message format:** prefix every commit with one of `feature:` / `docs:` / `fix:` / `chore:`
+  (e.g. `feature: add MicrovmImage construct`, `docs: update ARCH`). No `Co-Authored-By` trailer.
 - **Definition of done:** code + passing `make unit` + `make lint` clean + `make synth` green (incl.
   cdk-nag) + `SPEC.md`/`ARCH.md` updated if behavior changed.
