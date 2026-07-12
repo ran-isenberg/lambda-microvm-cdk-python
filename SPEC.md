@@ -308,7 +308,7 @@ Public API at the package root; **all implementation/helpers under `_impl/` (pri
 
 ```
 microvm/                                  # repo root
-├── SPEC.md · README.md · LICENSE (MIT-0) · CHANGELOG.md
+├── SPEC.md · README.md · LICENSE (MIT-0)
 ├── Makefile                              # dev + pipeline (§9)
 ├── pyproject.toml                        # uv + hatchling + ruff/mypy; deps incl. boto3
 ├── uv.lock · .python-version (3.14) · .gitignore
@@ -337,11 +337,15 @@ microvm/                                  # repo root
 │   └── e2e/                              # boto3 run_microvm from stack outputs + prompt + assert + terminate
 │       ├── conftest.py                   # running_microvm fixture (§12)
 │       └── test_agent_prompt.py
-└── .github/workflows/
-    ├── ci.yml                            # make lint + make unit + make synth
-    ├── e2e.yml                           # make deploy -> make e2e -> make destroy (gated)
-    ├── docs.yml                          # make publish-docs -> GitHub Pages
-    └── release.yml                       # tag -> wheel -> PyPI Trusted Publishing (OIDC)
+└── .github/
+    ├── FUNDING.yml · dependabot.yml · release.yml (notes) · semantic.yml
+    └── workflows/
+        ├── ci.yml                        # make lint + complex + unit + synth (cdk-nag); no AWS
+        ├── e2e.yml                       # make deploy -> make e2e -> make destroy (gated, OIDC)
+        ├── docs.yml                      # make publish-docs -> GitHub Pages
+        ├── release.yml                   # tag v* -> wheel -> PyPI Trusted Publishing (OIDC) + GH release
+        ├── pr-labeler.yml                # label PRs from commit prefixes
+        └── comment_issues.yml            # auto-acknowledge new issues
 ```
 
 ---
@@ -501,7 +505,13 @@ def running_microvm(stack_outputs):
 - **Phase 3 — VPC egress + hardening:** `AWS::Lambda::NetworkConnector` + `aws_ec2_alpha` VpcV2 (2 AZ) behind `EgressConnector.vpc(...)`; security tests.
 - **Phase 4 — Custom resource (maybe):** resolve §8 update semantics; add boot-a-VM CR (would also make `MicrovmId`/`MicrovmEndpoint` deploy-time outputs, §4.5).
 - **Phase 5 — Optional launcher (deferred):** thin `run_microvm` Lambda, and separately an API-Gateway/WAF front door, only if a hosted control surface is wanted.
-- **Phase 6 — Publish:** finalize docs/CHANGELOG, CI + release workflow, GitHub Pages, tag → (Test)PyPI.
+- **Phase 6 — Publish:** finalize docs, CI + release workflow, GitHub Pages, tag → (Test)PyPI.
+  - **Scaffolded:** CI (`ci.yml`: lint/complex/unit/synth, no AWS), gated E2E (`e2e.yml`, OIDC), docs →
+    Pages (`docs.yml`, zensical), release (`release.yml`: tag `v*` → wheel → PyPI Trusted Publishing +
+    GH release), plus community automation (PR labeler, semantic PR title, issue comment, Dependabot,
+    FUNDING, release-notes). Makefile drives the CDK CLI via `npx aws-cdk`; docs pages complete
+    (Home/Getting Started/Construct/Contributing/Pipeline/Security).
+  - **Remaining:** PyPI Trusted-Publisher registration + version bump/tag; TestPyPI dry-run.
 
 ---
 

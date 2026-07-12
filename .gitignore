@@ -15,6 +15,10 @@ cdk.out/
 .cdk.staging/
 *.d.ts
 
+# Docs (zensical build output)
+site/
+.zensical_cache/
+
 # Tooling caches
 .mypy_cache/
 .pytest_cache/
