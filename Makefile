@@ -73,8 +73,9 @@ lint-docs:  ## Fix markdown formatting
 	npx --yes markdownlint-cli --fix "docs/**/*.md" "*.md"
 
 ## --- Aggregate --------------------------------------------------------------
-pr:  ## Pre-merge gate: format + lint + unit + synth
+pr:  ## Pre-merge gate: format + lint + complexity + unit + synth
 	$(MAKE) format
 	$(MAKE) lint
+	$(MAKE) complex
 	$(MAKE) unit
 	$(MAKE) synth
