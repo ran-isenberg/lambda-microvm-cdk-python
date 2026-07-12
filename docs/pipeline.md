@@ -25,18 +25,18 @@ CI behave identically. The AWS CDK CLI is invoked via `npx aws-cdk` — no globa
 ```mermaid
 flowchart TD
     PR[Pull request] --> Q[ci.yml · stage 1: quality_standards<br/>lint · complex · unit · synth+cdk-nag]
-    Main[Push to main] --> Q
     Manual[Manual / weekly] --> Q
     Q -->|needs: quality_standards| GATE{dev environment<br/>required-reviewer approval}
     GATE -->|approved| D[ci.yml · stage 2: deploy_e2e<br/>deploy -> e2e -> destroy always]
     PR --> LBL[pr-labeler.yml]
     PR --> SEM[semantic PR-title check]
-    Main --> DOCS[docs.yml: zensical build -> GitHub Pages]
+    Main[Push to main] --> DOCS[docs.yml: zensical build -> GitHub Pages]
     Tag[Tag v*] --> REL[release.yml: build wheel -> PyPI OIDC -> GitHub Release]
     Issue[Issue opened] --> CMT[comment_issues.yml]
 ```
 
-- **`ci.yml`** is a two-stage pipeline, on PR / push to `main` / manual / weekly:
+- **`ci.yml`** is a two-stage pipeline, on PR / manual / weekly (not on push to `main` — a PR
+  already ran it before merge):
   - **Stage 1 — `quality_standards`.** Lint, complexity, unit tests and `cdk synth` (which runs
     cdk-nag `AwsSolutionsChecks`). **No AWS credentials** — the base-image lookup falls back to
     `"0"` and boto3 is mocked. This is the default merge gate.
