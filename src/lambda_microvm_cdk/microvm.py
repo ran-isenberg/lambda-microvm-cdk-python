@@ -1,4 +1,4 @@
-"""LambdaMicroVM — the public construct of this library. Emits ``AWS::Lambda::MicrovmImage`` (SPEC.md §3, §4)."""
+"""LambdaMicroVM — the public construct of this library. Emits ``AWS::Lambda::MicrovmImage``."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ class LambdaMicroVM(Construct):
     ``ingress_connector_arn``, …) — the consuming stack decides which to surface as ``CfnOutput``s
     (see ``sample/sample_stack.py``), so the construct never forces outputs onto a consumer's
     template. Running a MicroVM is a runtime API call (not CloudFormation) — wire these properties
-    into ``run_microvm`` (SPEC.md §4.2).
+    into ``run_microvm``.
 
     Args:
         source: Where the image code artifact comes from — a path to a directory containing a
@@ -55,9 +55,9 @@ class LambdaMicroVM(Construct):
             today) or a full base-image ARN.
         base_image_version: Pin for the base image version. Default ``None`` resolves the latest
             active version via a live boto3 lookup on every synth; falls back to ``'0'`` with a
-            synth warning when offline. Pin this for deterministic, offline CI (SPEC.md §7).
+            synth warning when offline. Pin this for deterministic, offline CI.
         architecture: CPU architecture, reusing ``aws_lambda.Architecture``. ``ARM_64`` is the
-            default and the only value the service accepts today — anything else raises (SPEC.md §0).
+            default and the only value the service accepts today — anything else raises.
         memory_mib: Baseline memory size in MiB (``Resources[].MinimumMemoryInMiB``); vCPU scales with it
             and it auto-scales up to 4× at peak. One of the five documented tiers ``512 | 1024 | 2048 |
             4096 | 8192`` — anything else raises (the API accepts only these, though the CFN schema types
@@ -66,7 +66,7 @@ class LambdaMicroVM(Construct):
             privilege escalation — default is none (least privilege).
         environment: Env vars baked into the image at build time (max 50). **Snapshotted and shared
             across every VM from this image — never secrets**; secret-looking keys raise. ``AWS_REGION``
-            is reserved (the runtime injects it) and raises (SPEC.md §5.3, §0).
+            is reserved (the runtime injects it) and raises.
         egress_connectors: Network-connector ARNs baked into the image (max 10). Usually left empty —
             connectors are normally chosen per-launch in ``run_microvm``.
         enable_logging: ``True`` (default) streams build + runtime logs to CloudWatch; ``False``
@@ -81,13 +81,13 @@ class LambdaMicroVM(Construct):
         execution_role: BYO IAM role assumed by the *running* VM. Default: a least-privilege role
             with runtime-logs permissions only; add workload permissions (e.g. Bedrock) on top.
         log_retention: Retention applied to the service-owned log group (which this construct
-            deliberately does not create — the service owns it, SPEC.md §5.6). ``None`` skips the
+            deliberately does not create — the service owns it). ``None`` skips the
             retention resource. Default one month.
         removal_policy: What happens to the image when the resource is removed. Default ``DESTROY``
             (dev/sample posture) — set ``RETAIN`` for images that must survive stack deletion.
         tags: Resource tags for cost allocation.
         overrides: Escape hatch — merged verbatim into the L1 ``Properties`` using exact CFN
-            casing, so no consumer is ever blocked on an un-modeled field (SPEC.md §4.3).
+            casing, so no consumer is ever blocked on an un-modeled field.
     """
 
     def __init__(
@@ -170,7 +170,7 @@ class LambdaMicroVM(Construct):
             logging=logging,
             tags=[CfnTag(key=key, value=value) for key, value in tags.items()] if tags else None,
         )
-        # Escape hatch: set/replace top-level L1 Properties verbatim, exact CFN casing (SPEC.md §4.3).
+        # Escape hatch: set/replace top-level L1 Properties verbatim, exact CFN casing.
         for key, value in (overrides or {}).items():
             self._resource.add_property_override(key, value)
         self._resource.apply_removal_policy(removal_policy)
@@ -179,7 +179,7 @@ class LambdaMicroVM(Construct):
 
         if log_retention is not None:
             # The service creates and OWNS the log group; LogRetention only sets its retention
-            # policy without owning it (avoids the "already exists" clash, SPEC.md §5.6).
+            # policy without owning it (avoids the "already exists" clash).
             logs.LogRetention(self, 'LogRetention', log_group_name=self._log_group_name, retention=log_retention)
 
     # --- public surface -------------------------------------------------------
@@ -232,7 +232,7 @@ class LambdaMicroVM(Construct):
     def grant_run(self, grantee: iam.IGrantable) -> None:
         """Attach least-privilege runtime-caller permissions to *grantee* — ``lambda:RunMicrovm``
         scoped to this image, VM lifecycle + auth-token actions scoped to this account/region,
-        and ``iam:PassRole`` limited to the VM execution role (SPEC.md §5.1)."""
+        and ``iam:PassRole`` limited to the VM execution role."""
         security.grant_run(self, grantee, image_arn=self.image_arn, execution_role=self._execution_role)
 
     # --- private helpers ------------------------------------------------------
@@ -255,7 +255,7 @@ class LambdaMicroVM(Construct):
     def _resolve_name(self, name: str | None) -> str:
         if name is None:
             # Stable, path-derived (NOT asset-hash-derived) so code changes update the image
-            # in place (new version) instead of replacing it (SPEC.md §4.4).
+            # in place (new version) instead of replacing it.
             return Names.unique_resource_name(self, max_length=64, allowed_special_characters='-_')
         if not _NAME_PATTERN.match(name):
             raise ValueError(f'name must match ^[a-zA-Z0-9-_]{{1,64}}$ (changing it forces replacement), got: {name!r}')
@@ -266,7 +266,7 @@ class LambdaMicroVM(Construct):
         if architecture.name != lambda_.Architecture.ARM_64.name:
             raise ValueError(
                 f'architecture {architecture.name!r} is not accepted by the MicroVM API today — '
-                'ARM_64 is the only valid value (the service enum rejects X86_64; SPEC.md §0).'
+                'ARM_64 is the only valid value (the service enum rejects X86_64).'
             )
 
     @staticmethod
@@ -275,7 +275,7 @@ class LambdaMicroVM(Construct):
             raise ValueError(f'environment supports at most {_MAX_ENVIRONMENT_VARIABLES} variables, got {len(environment)}')
         for key, value in environment.items():
             if key in _RESERVED_ENV_KEYS:
-                raise ValueError(f'environment key {key!r} is reserved — the MicroVM runtime injects it (CreateMicrovmImage rejects it; SPEC.md §0)')
+                raise ValueError(f'environment key {key!r} is reserved — the MicroVM runtime injects it (CreateMicrovmImage rejects it)')
             if not key or len(key) > _MAX_ENV_KEY_LENGTH or any(ch.isspace() for ch in key):
                 raise ValueError(f'environment key {key!r} must be 1-{_MAX_ENV_KEY_LENGTH} chars with no whitespace')
             if len(value) > _MAX_ENV_VALUE_LENGTH:
@@ -286,5 +286,5 @@ class LambdaMicroVM(Construct):
                 raise ValueError(
                     f'environment key {key!r} looks like a secret — image EnvironmentVariables are snapshotted and shared '
                     'across every VM from this image. Pass secret references via runHookPayload or fetch from SSM/Secrets '
-                    'Manager at runtime instead (SPEC.md §5.3).'
+                    'Manager at runtime instead.'
                 )

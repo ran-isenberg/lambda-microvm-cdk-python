@@ -1,4 +1,4 @@
-"""Sample CDK app entrypoint — cdk-nag AwsSolutionsChecks runs on every synth (SPEC.md §5.9)."""
+"""Sample CDK app entrypoint — cdk-nag AwsSolutionsChecks runs on every synth."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ SampleStack(
     'LambdaMicrovmSampleStack',
     env=Environment(
         account=os.environ.get('CDK_DEFAULT_ACCOUNT'),
-        # MicroVMs are verified in us-east-1 only so far (SPEC.md §14).
+        # MicroVMs are verified in us-east-1 only so far.
         region=os.environ.get('CDK_DEFAULT_REGION', 'us-east-1'),
     ),
     description='lambda-microvm-cdk sample: Bedrock-backed MicroVM image (Nova 2 Lite default / Opus opt-in; E2E target)',

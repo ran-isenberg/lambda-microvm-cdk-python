@@ -1,4 +1,4 @@
-"""E2E fixtures — drive the runtime API via boto3 from the deployed stack's outputs (SPEC.md §12).
+"""E2E fixtures — drive the runtime API via boto3 from the deployed stack's outputs.
 
 Requires AWS credentials + a deployed stack (``make deploy``, then ``make e2e``). Not part of the
 ``make unit``/CI gate — that target only runs ``tests/unit``, so these never fire there.
@@ -21,7 +21,7 @@ STACK_NAME = os.environ.get('MICROVM_STACK_NAME', 'LambdaMicrovmSampleStack')
 REGION = os.environ.get('MICROVM_REGION', 'us-east-1')
 IMAGE_CREATED_TIMEOUT_SECONDS = 20 * 60  # spike: build took ~165s; leave headroom
 VM_RUNNING_TIMEOUT_SECONDS = 5 * 60  # spike: RUNNING in ~15s
-MAX_VM_DURATION_SECONDS = 900  # hard TTL backstop on every launch (§5.2)
+MAX_VM_DURATION_SECONDS = 900  # hard TTL backstop on every launch
 
 
 @pytest.fixture(scope='session')
@@ -31,7 +31,7 @@ def microvm_client() -> Any:
 
 @pytest.fixture(scope='session')
 def stack_outputs() -> dict[str, str]:
-    """Read the deployed sample stack's CloudFormation outputs (§4.5)."""
+    """Read the deployed sample stack's CloudFormation outputs."""
     cloudformation = boto3.client('cloudformation', region_name=REGION)
     stacks = cloudformation.describe_stacks(StackName=STACK_NAME)['Stacks']
     outputs = {entry['OutputKey']: entry['OutputValue'] for entry in stacks[0]['Outputs']}
@@ -69,7 +69,7 @@ def created_image(microvm_client: Any, stack_outputs: dict[str, str]) -> dict[st
 
 @pytest.fixture(scope='session')
 def running_microvm(microvm_client: Any, stack_outputs: dict[str, str], created_image: dict[str, Any]) -> Iterator[dict[str, Any]]:
-    """Launch one MicroVM from stack outputs; ALWAYS terminated in teardown (AWS guardrails §3)."""
+    """Launch one MicroVM from stack outputs; ALWAYS terminated in teardown (AWS guardrails)."""
     run = microvm_client.run_microvm(
         imageIdentifier=stack_outputs['MicrovmImageArn'],
         executionRoleArn=stack_outputs['MicrovmExecutionRoleArn'],
@@ -97,12 +97,12 @@ def running_microvm(microvm_client: Any, stack_outputs: dict[str, str], created_
 
 @pytest.fixture()
 def auth_headers(microvm_client: Any, running_microvm: dict[str, Any]) -> dict[str, str]:
-    """Short-lived JWE token scoped to port 8080 only (§5.2, §5.5)."""
+    """Short-lived JWE token scoped to port 8080 only."""
     token_response = microvm_client.create_microvm_auth_token(
         microvmIdentifier=running_microvm['microvmId'],
         allowedPorts=[{'port': 8080}],
         expirationInMinutes=30,
     )
-    # authToken is a header map — the key is exactly 'X-aws-proxy-auth' (validated in the spike, §0).
+    # authToken is a header map — the key is exactly 'X-aws-proxy-auth' (validated in the spike).
     headers: dict[str, str] = dict(token_response['authToken'])
     return headers

@@ -1,4 +1,4 @@
-"""Sample stack — a MicroVM image running the tiered model worker (Nova default / Opus opt-in; SPEC.md §11).
+"""Sample stack — a MicroVM image running the tiered model worker (Nova default / Opus opt-in).
 
 Provides everything the E2E fixture needs as clean stack-level CfnOutputs; the running
 VM itself is launched by the fixture/consumer via boto3 (runtime API, not CloudFormation).
@@ -17,7 +17,7 @@ from lambda_microvm_cdk import LambdaMicroVM
 
 # Default worker model: Amazon Nova 2 Lite. It is INFERENCE_PROFILE-only, so it must be invoked via the
 # cross-region profile — which fans out to us-east-1/2 + us-west-2, so the grant needs the profile ARN
-# AND the underlying foundation-model ARN (region-wildcarded, model id pinned). Both validated §0.
+# AND the underlying foundation-model ARN (region-wildcarded, model id pinned). Both validated.
 NOVA_INFERENCE_PROFILE_ID = 'us.amazon.nova-2-lite-v1:0'
 NOVA_FOUNDATION_MODEL_ID = 'amazon.nova-2-lite-v1:0'
 MICROVM_APP_DIR = Path(__file__).parent / 'microvm_app'
@@ -38,8 +38,8 @@ class SampleStack(Stack):
             # /aws/lambda/microvms/lambda-microvm-cdk-sample (streams named by microvmId). Default is
             # already True — set explicitly so it's obvious the sample is observable.
             enable_logging=True,
-            # NEVER secrets here — image env is snapshotted and shared (§5.3). Model routing env
-            # lives in the Dockerfile; AWS_REGION is reserved (the runtime injects it, §0).
+            # NEVER secrets here — image env is snapshotted and shared. Model routing env
+            # lives in the Dockerfile; AWS_REGION is reserved (the runtime injects it).
             environment={'LOG_LEVEL': 'info'},
             tags={'project': 'lambda-microvm-cdk', 'component': 'sample'},
         )
@@ -47,7 +47,7 @@ class SampleStack(Stack):
         self._apply_nag_suppressions(image)
         Tags.of(self).add('project', 'lambda-microvm-cdk')
 
-        # Clean stack-level output keys — exactly what the E2E fixture feeds into run_microvm (§4.5, §12).
+        # Clean stack-level output keys — exactly what the E2E fixture feeds into run_microvm.
         CfnOutput(self, 'MicrovmImageArn', value=image.image_arn)
         CfnOutput(self, 'MicrovmImageName', value=image.image_name)
         CfnOutput(self, 'MicrovmExecutionRoleArn', value=image.execution_role.role_arn)
@@ -61,10 +61,10 @@ class SampleStack(Stack):
 
         - **Nova (default)** via the boto3 Bedrock **Converse** API authorizes with ``bedrock:InvokeModel``
           on the inference-profile ARN + the underlying foundation-model ARN it fans out to (region
-          wildcard, model id pinned — Nova 2 Lite is INFERENCE_PROFILE-only, §0).
+          wildcard, model id pinned — Nova 2 Lite is INFERENCE_PROFILE-only).
         - **Opus (opt-in)** via ``AnthropicBedrockMantle`` authorizes with ``bedrock-mantle:CreateInference``
           on the account's default project — the Messages-API endpoint, NOT classic InvokeModel (the wrong
-          action was the spike's uncaptured 500, confirmed by E2E; §0).
+          action was the spike's uncaptured 500, confirmed by E2E).
         """
         image.execution_role.add_to_principal_policy(
             iam.PolicyStatement(
@@ -85,7 +85,7 @@ class SampleStack(Stack):
         )
 
     def _apply_nag_suppressions(self, image: LambdaMicroVM) -> None:
-        """Targeted, justified suppressions only — never blanket (SPEC.md §5.9)."""
+        """Targeted, justified suppressions only — never blanket."""
         NagSuppressions.add_resource_suppressions(
             image.build_role,
             [

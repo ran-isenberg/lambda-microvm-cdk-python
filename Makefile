@@ -1,8 +1,9 @@
 .PHONY: dev lint format format-fix mypy-lint unit build synth deploy destroy e2e \
-        docs docs-serve publish-docs lint-docs complex pr help
+        docs docs-serve publish-docs lint-docs complex package pr help
 
 PYTHON := uv run
-CDK    := $(PYTHON) cdk
+# CDK CLI comes from npm via npx (no global install); the app itself is Python (see sample/cdk.json).
+CDK    := npx --yes aws-cdk@2
 SAMPLE := sample
 
 help:  ## Show this help
@@ -55,6 +56,10 @@ deploy:  ## cdk deploy the sample app (pipeline)
 destroy:  ## cdk destroy the sample app (pipeline)
 	cd $(SAMPLE) && $(CDK) destroy --force --all
 
+## --- Packaging --------------------------------------------------------------
+package:  ## Build the sdist + wheel (published to PyPI by the release workflow)
+	uv build
+
 ## --- Docs (GitHub Pages via zensical) ---------------------------------------
 docs: docs-serve  ## Alias: serve docs locally
 
@@ -68,8 +73,9 @@ lint-docs:  ## Fix markdown formatting
 	npx --yes markdownlint-cli --fix "docs/**/*.md" "*.md"
 
 ## --- Aggregate --------------------------------------------------------------
-pr:  ## Pre-merge gate: format + lint + unit + synth
+pr:  ## Pre-merge gate: format + lint + complexity + unit + synth
 	$(MAKE) format
 	$(MAKE) lint
+	$(MAKE) complex
 	$(MAKE) unit
 	$(MAKE) synth

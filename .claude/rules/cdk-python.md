@@ -16,4 +16,4 @@ Per [ranthebuilder — CDK best practices from the trenches](https://ranthebuild
 - **Config in code** — stage/account differences via config + conditionals, not copy-paste stacks.
 - **Tag resources** for cost allocation.
 - **Confirm L1 property shapes** against the CFN registry / boto3 service model before wiring
-  (see `SPEC.md` §0, §3) — the MicroVM resources are new and not all L2-modeled.
+  — the MicroVM resources are new and not all L2-modeled.

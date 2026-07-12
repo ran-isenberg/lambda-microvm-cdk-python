@@ -53,6 +53,7 @@ Ship a **generic, reusable, parameter-driven, security-first CDK construct** tha
 The repo also ships a **deployable sample CDK app** whose MicroVM runs a **model worker** on **Amazon Bedrock** (`us-east-1`): **Amazon Nova 2 Lite by default** (via the boto3 Converse API), with **Claude Opus 4.8 as an opt-in** (via the Anthropic SDK, `MODEL_PROVIDER=anthropic`). This sample is the target for **E2E tests**: launch the MicroVM, send a prompt, assert a result.
 
 Two-stage delivery:
+
 - **Stage 1 (build):** image construct + VM execution role + sample app + unit/E2E tests (E2E drives `run_microvm` via boto3 from stack outputs) + docs, deployable to AWS.
 - **Stage 2 (publish):** harden, finalize docs, tag, publish the wheel to PyPI.
 
@@ -73,12 +74,14 @@ Firecracker-based serverless compute with VM-level isolation, full OS capabiliti
 **Key implication:** images and connectors are declarative CloudFormation; *running* a MicroVM is a runtime API call, so it's driven via boto3 from app/test code (the E2E fixture, §12), not CloudFormation.
 
 ### Image build flow (Phase 1)
+
 1. Bundle `Dockerfile`+app → zip → S3 (CDK asset).
 2. Create a least-privilege IAM **build role** the Lambda MicroVM service assumes to pull the artifact from S3 and write CloudWatch build logs.
 3. Emit `AWS::Lambda::MicrovmImage` referencing the S3 artifact + managed **base image** ARN + resolved `BaseImageVersion` (§7).
 4. Build is async: `CREATING → CREATED` (or `CREATE_FAILED`). Optional build hooks `/ready`, `/validate`.
 
 ### Run flow (driven by app/test boto3, using stack outputs)
+
 `RunMicrovm` params (validated): `imageIdentifier` (req), `imageVersion`, **`executionRoleArn`**, `idlePolicy`, `ingressNetworkConnectors`, `egressNetworkConnectors`, `logging`, **`maximumDurationInSeconds`** (1–28,800 — hard TTL), `runHookPayload` (≤16 KB), `clientToken` (idempotency). Access requires a JWE token from `CreateMicrovmAuthToken` (`allowedPorts` = `{port}` / `{range}` / `{allPorts}`, `expirationInMinutes`) in the `X-aws-proxy-auth` header; port via `X-aws-proxy-port` (default 8080).
 **Runtime lifecycle hooks** the app exposes at `/aws/lambda-microvms/runtime/v1/<hook>`: `/run` (traffic starts only after it returns 200), `/resume`, `/suspend`, `/terminate`.
 
@@ -207,11 +210,13 @@ These deploy-time outputs are exactly the inputs the **E2E fixture** feeds into 
 ## 5. Security (first-class)
 
 ### 5.1 Least privilege on every generated role
+
 - **Build role:** trust `lambda.amazonaws.com` (`sts:AssumeRole`+`sts:TagSession`); permissions limited to `s3:GetObject` on the **exact asset key** (not `bucket/*`) + scoped `logs:*` on the image's log group only. Private-ECR perms added **only if** the source opts in.
 - **Runtime-caller grant (`image.grant_run(principal)`):** attaches `lambda:RunMicrovm`, `SuspendMicrovm`, `ResumeMicrovm`, `TerminateMicrovm`, `CreateMicrovmAuthToken`, `GetMicrovm`, `ListMicrovms` scoped to the **specific image ARN** where the API supports resource-level, plus `iam:PassRole` limited to the VM execution role — for whoever drives the runtime (a consumer app, or a future launcher Lambda). No `*`. (The repo's E2E uses developer SSO creds, so it needs these on the principal, not a construct-created role.)
 - **VM execution role (sample):** grants BOTH worker providers so `MODEL_PROVIDER` can flip without an IAM change. **Nova (default)**: `bedrock:InvokeModel[WithResponseStream]` on the inference-profile ARN `arn:aws:bedrock:<region>:<acct>:inference-profile/us.amazon.nova-2-lite-v1:0` **and** the region-wildcard foundation-model ARN it fans out to (`arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0`) — Nova 2 Lite is `INFERENCE_PROFILE`-only. **Opus (opt-in)**: `bedrock-mantle:CreateInference` on `arn:aws:bedrock-mantle:<region>:<acct>:project/default` — the Mantle Messages-API endpoint, **not** classic InvokeModel (E2E-confirmed 2026-07-11: the wrong action was the spike's uncaptured 500, §0). Plus `logs:CreateLogGroup/CreateLogStream/PutLogEvents` on the image's log group (§5.6). No long-lived credentials in the image.
 
 ### 5.2 Secure defaults & parameter hardening
+
 - `os_capabilities` defaults `[]`; `ALL` must be explicit (documented privilege escalation). *(Note: the sample worker installs packages at build time, not run time, so it does not need `ALL`; if a consumer mounts filesystems at runtime they opt in.)*
 - `logging` defaults CloudWatch (auditable).
 - Auth tokens: short expiry + tight `allowedPorts` (sample: only 8080).
@@ -219,10 +224,13 @@ These deploy-time outputs are exactly the inputs the **E2E fixture** feeds into 
 - Validation rejects malformed/out-of-range inputs early.
 
 ### 5.3 Secrets — never in the image
+
 `EnvironmentVariables` are **baked into the snapshot** and shared across every VM from that image → **never put secrets there.** Pattern (matches the aws-samples repo): pass secret *references* per-VM via `runHookPayload` (≤16 KB) or fetch from SSM Parameter Store / Secrets Manager at runtime inside the `/run` (or `/resume`) hook using the VM execution role. The construct documents this and the sample demonstrates the Parameter Store path.
 
 ### 5.4 VPC egress (opt-in, `vpc_v2`, 2 AZs) — now declarative
+
 Confirmed `AWS::Lambda::NetworkConnector` is a CFN resource, so VPC egress is **pure CDK** (no runtime custom resource). Mirrors [`aws-lambda-handler-cookbook/.../lambda_managed_instance_construct.py`](https://github.com/ran-isenberg/aws-lambda-handler-cookbook/blob/main/cdk/service/lambda_managed_instance_construct.py):
+
 - **`aws_ec2_alpha` VpcV2**, `10.0.0.0/16`, **exactly 2 AZs**, `PRIVATE_WITH_EGRESS` subnets (NAT), `/24` each.
 - VPC **flow logs** (reject traffic, short retention); interface/gateway endpoints where useful; endpoint SG restricts ingress to the workload SG (no `0.0.0.0/0`).
 - `AWS::Lambda::NetworkConnector` with `Configuration` (VPC egress: subnets, SGs, protocol) + least-priv `OperatorRole` (`ec2:CreateNetworkInterface` on scoped ARNs + `ec2:CreateTags` with the `network-connectors.lambda.amazonaws.com` operator condition).
@@ -306,9 +314,9 @@ Aspects.of(app).add(AwsSolutionsChecks(verbose=True))
 
 Public API at the package root; **all implementation/helpers under `_impl/` (private)**.
 
-```
+```text
 microvm/                                  # repo root
-├── SPEC.md · README.md · LICENSE (MIT-0) · CHANGELOG.md
+├── SPEC.md · README.md · LICENSE (MIT-0)
 ├── Makefile                              # dev + pipeline (§9)
 ├── pyproject.toml                        # uv + hatchling + ruff/mypy; deps incl. boto3
 ├── uv.lock · .python-version (3.14) · .gitignore
@@ -337,11 +345,15 @@ microvm/                                  # repo root
 │   └── e2e/                              # boto3 run_microvm from stack outputs + prompt + assert + terminate
 │       ├── conftest.py                   # running_microvm fixture (§12)
 │       └── test_agent_prompt.py
-└── .github/workflows/
-    ├── ci.yml                            # make lint + make unit + make synth
-    ├── e2e.yml                           # make deploy -> make e2e -> make destroy (gated)
-    ├── docs.yml                          # make publish-docs -> GitHub Pages
-    └── release.yml                       # tag -> wheel -> PyPI Trusted Publishing (OIDC)
+└── .github/
+    ├── FUNDING.yml · dependabot.yml · release.yml (notes) · semantic.yml
+    └── workflows/
+        ├── ci.yml                        # make lint + complex + unit + synth (cdk-nag); no AWS
+        ├── e2e.yml                       # make deploy -> make e2e -> make destroy (gated, OIDC)
+        ├── docs.yml                      # make publish-docs -> GitHub Pages
+        ├── release.yml                   # tag v* -> wheel -> PyPI Trusted Publishing (OIDC) + GH release
+        ├── pr-labeler.yml                # label PRs from commit prefixes
+        └── comment_issues.yml            # auto-acknowledge new issues
 ```
 
 ---
@@ -349,6 +361,7 @@ microvm/                                  # repo root
 ## 7. Base image version lookup (boto3, live)
 
 `base_image_version` resolution, in `_impl/base_image.py`:
+
 1. If `base_image_version` is passed → use verbatim (pin/override).
 2. Else resolve via boto3 `lambda-microvms.list_managed_microvm_image_versions(imageIdentifier=<resolved base ARN>)` and pick the latest active version (**today the only value is `"0"`**).
 3. On failure (no creds / offline / API error) → **fall back to `"0"`** + a CDK warning annotation; synth never hard-fails.
@@ -360,6 +373,7 @@ microvm/                                  # repo root
 ## 8. Custom resource — deferred (design captured)
 
 A deploy-time "boot one MicroVM" CR is deferred. The update-semantics problem to solve first:
+
 - **Update:** on prop change (image version, size, idle policy) decide terminate-and-relaunch vs in-place, and manage `PhysicalResourceId` (changing it triggers `Delete` of the old). Use `clientToken` (validated: `RunMicrovm` supports it) for idempotent launches.
 - **Image change:** key off the resolved `ImageArn`/version so a new version forces a new VM.
 - **Delete:** reliably `TerminateMicrovm` (handle not-found / already-terminated) to avoid orphaned billable VMs.
@@ -397,6 +411,7 @@ uv-based, mirrors [aws-lambda-handler-cookbook/Makefile](https://github.com/ran-
 ## 11. Sample app — model worker on Bedrock (Nova 2 Lite default / Opus 4.8 opt-in, us-east-1)
 
 **Inside the MicroVM** (`sample/microvm_app/`):
+
 - `Dockerfile`: AL2023-compatible app layers; install Claude Code CLI (headless) + Python worker at **build** time (no `ALL` OS capability needed). `EXPOSE 8080`, `CMD worker.py`.
 - `worker.py`: HTTP server on `:8080` implementing the **`/run` lifecycle hook** (returns 200 to admit traffic; reads secret refs from `runHookPayload`/Parameter Store). It exposes **three tiers**, chosen by request field / env, so the risky pieces are isolated and never gate the library:
   1. **`echo` (deterministic, no model)** — fixed transform of the input. **This is what E2E asserts on.** Zero model dependency → the library's correctness never rides on Bedrock or the agent working.
@@ -418,9 +433,10 @@ uv-based, mirrors [aws-lambda-handler-cookbook/Makefile](https://github.com/ran-
          model=MODEL_ID, max_tokens=1024, messages=[{"role": "user", "content": prompt}],
      )
      ```
+
   3. **`agent` (Claude Code headless — opt-in enhancement)** — `claude -p "<prompt>" --output-format json` in the sandbox. This is the piece with real first-try risk (Node runtime, permission prompts, autoupdater), so it is **layered on top of, not required by**, the deployable sample. Headless-hardening env (all non-secret, set as image `EnvironmentVariables`):
 
-     ```
+     ```text
      CLAUDE_CODE_USE_BEDROCK=1
      # AWS_REGION is a RESERVED image env key (CreateMicrovmImage rejects it, §0) — the runtime
      # injects it (= the region run_microvm was called in). Do NOT set it as an image env var.
@@ -501,18 +517,24 @@ def running_microvm(stack_outputs):
 - **Phase 3 — VPC egress + hardening:** `AWS::Lambda::NetworkConnector` + `aws_ec2_alpha` VpcV2 (2 AZ) behind `EgressConnector.vpc(...)`; security tests.
 - **Phase 4 — Custom resource (maybe):** resolve §8 update semantics; add boot-a-VM CR (would also make `MicrovmId`/`MicrovmEndpoint` deploy-time outputs, §4.5).
 - **Phase 5 — Optional launcher (deferred):** thin `run_microvm` Lambda, and separately an API-Gateway/WAF front door, only if a hosted control surface is wanted.
-- **Phase 6 — Publish:** finalize docs/CHANGELOG, CI + release workflow, GitHub Pages, tag → (Test)PyPI.
+- **Phase 6 — Publish:** finalize docs, CI + release workflow, GitHub Pages, tag → (Test)PyPI.
+  - **Scaffolded:** CI (`ci.yml`: lint/complex/unit/synth, no AWS), gated E2E (`e2e.yml`, OIDC), docs →
+    Pages (`docs.yml`, zensical), release (`release.yml`: tag `v*` → wheel → PyPI Trusted Publishing +
+    GH release), plus community automation (PR labeler, semantic PR title, issue comment, Dependabot,
+    FUNDING, release-notes). Makefile drives the CDK CLI via `npx aws-cdk`; docs pages complete
+    (Home/Getting Started/Construct/Contributing/Pipeline/Security).
+  - **Remaining:** PyPI Trusted-Publisher registration + version bump/tag; TestPyPI dry-run.
 
 ---
 
 ## 16. Key references
 
-- Lambda MicroVMs guide — https://docs.aws.amazon.com/lambda/latest/dg/lambda-microvms-guide.html
-- Getting started — https://docs.aws.amazon.com/lambda/latest/dg/microvms-getting-started.html
-- Running/using MicroVMs (hooks, run params) — https://docs.aws.amazon.com/lambda/latest/dg/microvms-launching.html
-- Networking — https://docs.aws.amazon.com/lambda/latest/dg/microvms-networking.html
-- RunMicrovm API — https://docs.aws.amazon.com/lambda/latest/microvm-api/API_RunMicrovm.html
-- `AWS::Lambda::MicrovmImage` — https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-lambda-microvmimage.html
-- SAM/TypeScript sample — https://github.com/aws-samples/sample-lambda-microvm-claude-managed-agents
-- Cookbook Makefile / zensical / VpcV2 construct — https://github.com/ran-isenberg/aws-lambda-handler-cookbook
-- PyPI Trusted Publishing — https://docs.pypi.org/trusted-publishers/
+- Lambda MicroVMs guide — <https://docs.aws.amazon.com/lambda/latest/dg/lambda-microvms-guide.html>
+- Getting started — <https://docs.aws.amazon.com/lambda/latest/dg/microvms-getting-started.html>
+- Running/using MicroVMs (hooks, run params) — <https://docs.aws.amazon.com/lambda/latest/dg/microvms-launching.html>
+- Networking — <https://docs.aws.amazon.com/lambda/latest/dg/microvms-networking.html>
+- RunMicrovm API — <https://docs.aws.amazon.com/lambda/latest/microvm-api/API_RunMicrovm.html>
+- `AWS::Lambda::MicrovmImage` — <https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-lambda-microvmimage.html>
+- SAM/TypeScript sample — <https://github.com/aws-samples/sample-lambda-microvm-claude-managed-agents>
+- Cookbook Makefile / zensical / VpcV2 construct — <https://github.com/ran-isenberg/aws-lambda-handler-cookbook>
+- PyPI Trusted Publishing — <https://docs.pypi.org/trusted-publishers/>

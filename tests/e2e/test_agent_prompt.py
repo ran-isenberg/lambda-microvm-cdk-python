@@ -1,4 +1,4 @@
-"""E2E — send a prompt to the running MicroVM and assert the result (SPEC.md §12).
+"""E2E — send a prompt to the running MicroVM and assert the result.
 
 The deterministic **echo tier is the library's E2E gate** (zero model dependency).
 The Bedrock tier is exercised diagnostically: its full error body is surfaced (the
@@ -44,7 +44,7 @@ def test_echo_prompt_round_trip(running_microvm: dict[str, Any], auth_headers: d
 def test_bedrock_prompt_sums_two_random_numbers(running_microvm: dict[str, Any], auth_headers: dict[str, str]) -> None:
     """Model tier via the VM execution role: ask the model to add two fresh random numbers and assert the
     reply contains their sum (a real, non-deterministic model round-trip — not an echo). On failure, surface
-    the captured error body (SPEC.md §0)."""
+    the captured error body."""
     x, y = random.randint(1, 99), random.randint(1, 99)
     expected = x + y
     prompt = f'What is {x} + {y}? Reply with just the sum as a single number, nothing else.'

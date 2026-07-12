@@ -32,7 +32,7 @@ def test_sample_image_props(tmp_path: Path) -> None:
             'Name': 'lambda-microvm-cdk-sample',
             'Resources': [{'MinimumMemoryInMiB': 2048}],
             'CpuConfigurations': [{'Architecture': 'ARM_64'}],
-            'AdditionalOsCapabilities': [],  # the sample installs at build time — no ALL needed (§5.2)
+            'AdditionalOsCapabilities': [],  # the sample installs at build time — no ALL needed
             'EnvironmentVariables': Match.array_with([{'Key': 'LOG_LEVEL', 'Value': 'info'}]),  # model env lives in the Dockerfile
             'Logging': {'CloudWatch': {}},
         },
@@ -42,12 +42,12 @@ def test_sample_image_props(tmp_path: Path) -> None:
 def test_stack_outputs_use_the_exact_keys_the_e2e_fixture_reads(tmp_path: Path) -> None:
     outputs = _synth(tmp_path).to_json().get('Outputs', {})
     for key in ('MicrovmImageArn', 'MicrovmImageName', 'MicrovmExecutionRoleArn', 'IngressConnectorArn', 'EgressConnectorArn', 'MicrovmLogGroupName'):
-        assert key in outputs, f'missing stack output {key} (E2E fixture contract, SPEC.md §4.5/§12)'
+        assert key in outputs, f'missing stack output {key} (E2E fixture contract)'
 
 
 def test_execution_role_grants_both_model_providers_scoped(tmp_path: Path) -> None:
     # Default Nova path -> bedrock:InvokeModel on the profile + region-wildcard foundation model
-    # (INFERENCE_PROFILE-only); opt-in Opus path -> bedrock-mantle:CreateInference on the project (§0, §5.1).
+    # (INFERENCE_PROFILE-only); opt-in Opus path -> bedrock-mantle:CreateInference on the project.
     template = _synth(tmp_path)
     roles = template.find_resources(
         'AWS::IAM::Role', {'Properties': {'Description': 'Least-privilege execution role assumed by the running MicroVM'}}
