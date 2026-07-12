@@ -50,7 +50,7 @@ supporting internals are private under `_impl/`.
 
 ## 4. Repository layout
 
-```
+```text
 ├── SPEC.md · ARCH.md · CLAUDE.md · README.md · LICENSE (MIT-0)
 ├── Makefile                      # dev + pipeline entrypoints
 ├── pyproject.toml · uv.lock      # uv + hatchling + ruff/mypy; deps incl. boto3

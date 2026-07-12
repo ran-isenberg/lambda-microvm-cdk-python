@@ -14,7 +14,7 @@ Firecracker-based, VM-isolated, snapshot-fast serverless compute for AI sandboxe
 environments, and multi-tenant CI. Secure defaults, every AWS knob overridable, plus an escape hatch.
 
 **[📜 Documentation](https://ran-isenberg.github.io/lambda-microvm-cdk-python/)** | **[Blogs website](https://ranthebuilder.cloud/)**
-> **Contact details | mailto:ran.isenberg@ranthebuilder.cloud**
+> **Contact details | mailto:<ran.isenberg@ranthebuilder.cloud>**
 
 [![Twitter Follow](https://img.shields.io/twitter/follow/IsenbergRan?label=Follow&style=social)](https://twitter.com/RanBuilder)
 [![Website](https://img.shields.io/badge/Website-www.ranthebuilder.cloud-blue)](https://ranthebuilder.cloud/)
