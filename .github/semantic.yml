@@ -1,0 +1,15 @@
+# Validates PR titles against this repo's commit-message convention
+# (see .claude/rules/conventions.md): feature / docs / fix / chore, plus
+# common conventional-commit types. Enforced by the semantic-pull-request app.
+types:
+  - feature
+  - fix
+  - docs
+  - chore
+  - refactor
+  - perf
+  - test
+  - revert
+
+# Always validate the PR title (not individual commits).
+titleOnly: true
