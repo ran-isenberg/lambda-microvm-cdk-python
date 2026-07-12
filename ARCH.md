@@ -1,8 +1,7 @@
 # Architecture — lambda-microvm-cdk
 
 > What this repo is, how it's structured, how it's built and tested, and the conventions it follows.
-> For the full, API-validated design and phase plan see [SPEC.md](SPEC.md); for working rules see
-> [CLAUDE.md](CLAUDE.md).
+> For the working rules and conventions see [CLAUDE.md](CLAUDE.md).
 
 ## 1. What this repo does
 
@@ -19,7 +18,7 @@ environments, multi-tenant CI).
 ## 2. Core model — two planes
 
 Lambda MicroVMs split cleanly into two planes, which is the central design fact of this repo
-(validated against the live API — see [SPEC.md](SPEC.md) §0):
+(validated against the live API):
 
 | Plane | What | CloudFormation? | Where it lives here |
 |-------|------|-----------------|---------------------|
@@ -49,8 +48,6 @@ supporting internals are private under `_impl/`.
 - **Escape hatch** — `overrides: dict` merged verbatim into the L1 `Properties`, so no consumer
   is ever blocked on an un-modeled field.
 
-See [SPEC.md](SPEC.md) §4 for the full signatures.
-
 ## 4. Repository layout
 
 ```
@@ -71,7 +68,7 @@ See [SPEC.md](SPEC.md) §4 for the full signatures.
 
 ## 5. Security model
 
-Security is a first-class design goal (details in [SPEC.md](SPEC.md) §5):
+Security is a first-class design goal:
 
 - **Least privilege on every role.** Build role scoped to the exact S3 asset key + its log group; VM
   execution role scoped to the specific Bedrock inference-profile + foundation-model ARNs and its log
@@ -92,8 +89,7 @@ the agent working:
 3. **`agent`** — opt-in Claude Code headless (`claude -p`). Highest first-try risk; gates nothing.
 
 Spike status (2026-07-11): tiers "build → run → auth → ingress → echo" are **proven end-to-end** on
-real AWS; the in-VM Bedrock call returned a 500 and is **still unproven** (diagnosis deferred). See
-[SPEC.md](SPEC.md) §0.
+real AWS; the in-VM Bedrock call returned a 500 and is **still unproven** (diagnosis deferred).
 
 ## 7. Testing strategy
 
@@ -101,8 +97,7 @@ real AWS; the in-VM Bedrock call returned a 500 and is **still unproven** (diagn
   critical props, least-privilege IAM, secure defaults, and that validation errors raise. A dedicated
   `test_security.py`. **Every CDK change ships with a unit test** (see [CLAUDE.md](CLAUDE.md)).
 - **cdk-nag `AwsSolutionsChecks`** (AWS-recommended pack) applied as an app Aspect; runs at synth so
-  `make synth`/unit tests fail on any `AwsSolutions-*` finding — suppress only with a written reason
-  (`SPEC.md` §5.9).
+  `make synth`/unit tests fail on any `AwsSolutions-*` finding — suppress only with a written reason.
 - **Synth smoke** — `make synth` in CI.
 - **E2E (gated, real AWS)** — a pytest fixture reads stack outputs → `run_microvm` (with a TTL cap) →
   polls `RUNNING` → mints a scoped auth token → hits the endpoint and asserts (echo tier) →
@@ -133,11 +128,3 @@ resource-scoped least-privilege IAM; deliberate `RemovalPolicy` and stable logic
 resources; security-first defaults; no hardcoded account/region/secrets; synthesis tests + cdk-nag;
 config-in-code for stage differences; tagging; balanced abstraction (readability over clever
 factories).
-
-## 10. Roadmap
-
-Phase 0 (bootstrap), the Phase-2.0 spike, **Phase 1** (the `MicrovmImage` construct + typed helpers +
-unit/security/nag tests) and **Phase 2.1 code** (sample app + tiered worker + boto3 E2E fixture) are
-done — the sample synthesizes green with cdk-nag; the E2E run against real AWS needs a deploy +
-creds (`make deploy`, then `make e2e`). Next: Phase 3 (VPC egress), Phase 4 (optional boot custom resource),
-Phase 5 (optional launcher), Phase 6 (publish to PyPI). Full detail in [SPEC.md](SPEC.md) §15.

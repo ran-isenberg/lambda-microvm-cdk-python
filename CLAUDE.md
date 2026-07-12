@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 `lambda-microvm-cdk` — pure-Python AWS CDK construct library for AWS Lambda MicroVMs.
-Architecture: see `ARCH.md`. Full validated design + phases: see `SPEC.md`.
+Architecture and phase plan: see `ARCH.md`.
 
 Rules (follow all):
 

@@ -1,4 +1,4 @@
-"""Least-privilege IAM role builders (SPEC.md §5.1). Build role ≠ VM execution role — each is purpose-built."""
+"""Least-privilege IAM role builders. Build role ≠ VM execution role — each is purpose-built."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ def build_image_build_role(scope: Construct, construct_id: str, *, artifact_obje
 def build_vm_execution_role(scope: Construct, construct_id: str, *, group_arn: str) -> iam.Role:
     """The role assumed by the MicroVM during execution.
 
-    Default grants are runtime-logs only (no logs perms → no runtime logs, §5.6);
+    Default grants are runtime-logs only (no logs perms → no runtime logs);
     consumers add workload permissions (e.g. Bedrock in the sample) on top.
     """
     role = iam.Role(
@@ -87,7 +87,7 @@ def build_vm_execution_role(scope: Construct, construct_id: str, *, group_arn: s
 
 
 def grant_run(scope: Construct, grantee: iam.IGrantable, *, image_arn: str, execution_role: iam.IRole | None) -> None:
-    """Attach least-privilege runtime-caller permissions to *grantee* (SPEC.md §5.1).
+    """Attach least-privilege runtime-caller permissions to *grantee*.
 
     ``RunMicrovm`` is scoped to the specific image (and its versions); the VM lifecycle /
     auth-token actions target the account's MicroVM ARNs (running VMs are runtime resources

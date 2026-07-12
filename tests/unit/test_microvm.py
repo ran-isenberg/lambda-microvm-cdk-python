@@ -126,7 +126,7 @@ def test_full_base_image_arn_passes_through(stack_factory: Callable[[], Stack], 
 
 def test_derived_name_is_stable_across_synths_and_matches_regex(stack_factory: Callable[[], Stack], app_source_dir: str) -> None:
     names = [_vm(stack_factory(), app_source_dir).image_name for _ in range(2)]
-    assert names[0] == names[1], 'derived Name must be stable (replacement-safe, SPEC.md §4.4)'
+    assert names[0] == names[1], 'derived Name must be stable (replacement-safe)'
     assert re.match(r'^[a-zA-Z0-9-_]{1,64}$', names[0])
 
 
@@ -150,7 +150,7 @@ def test_overrides_merge_verbatim_including_unmodeled_props(stack_factory: Calla
 
 def test_construct_emits_no_cfn_outputs(stack_factory: Callable[[], Stack], app_source_dir: str) -> None:
     # A reusable construct exposes typed properties and leaves outputs to the consuming stack — it must
-    # not force CfnOutputs onto a consumer's template (SPEC.md §4.5; the sample stack owns its outputs).
+    # not force CfnOutputs onto a consumer's template (the sample stack owns its outputs).
     stack = stack_factory()
     vm = _vm(stack, app_source_dir)
     assert Template.from_stack(stack).to_json().get('Outputs', {}) == {}

@@ -1,4 +1,4 @@
-"""Base image alias→ARN resolution and the boto3 base-image-version lookup (SPEC.md §7).
+"""Base image alias→ARN resolution and the boto3 base-image-version lookup.
 
 Resolution order for ``base_image_version``:
 1. Explicit pin passed by the user → used verbatim.
@@ -42,7 +42,7 @@ def _partition_for_region(region: str) -> str:
 
 
 def resolve_base_image_version(scope: Construct, base_image: str, pinned: str | None) -> str:
-    """Resolve the base image version per SPEC.md §7 (pin → boto3 → ``"0"`` fallback).
+    """Resolve the base image version (pin → boto3 → ``"0"`` fallback).
 
     *base_image* is the raw user input (alias or full ARN) — a concrete lookup ARN is derived
     from it, independent of the token-bearing ARN wired into the template.
@@ -66,7 +66,7 @@ def resolve_base_image_version(scope: Construct, base_image: str, pinned: str | 
 
     try:
         return _fetch_latest_version(region, lookup_arn)
-    except Exception as exc:  # noqa: B902 — deliberate broad catch: synth must never hard-fail on lookup (§7)
+    except Exception as exc:  # noqa: B902 — deliberate broad catch: synth must never hard-fail on lookup
         Annotations.of(scope).add_warning(
             f'Base image version lookup failed ({exc.__class__.__name__}: {exc}); falling back to "{FALLBACK_BASE_IMAGE_VERSION}". '
             'Pin base_image_version to silence this.'

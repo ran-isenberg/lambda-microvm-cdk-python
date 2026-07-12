@@ -1,4 +1,4 @@
-"""Tiered MicroVM worker — HTTP server on :8080 (SPEC.md §11).
+"""Tiered MicroVM worker — HTTP server on :8080.
 
 Tiers (isolated so the risky pieces never gate the library):
   1. ``/echo``    — deterministic, no model. **E2E asserts on this.**
@@ -26,11 +26,11 @@ from typing import Any
 PORT = int(os.environ.get('PORT', '8080'))
 # Model routing for the /bedrock tier (set in the Dockerfile). Default: Amazon Nova 2 Lite via the
 # boto3 Bedrock Converse API. Set MODEL_PROVIDER=anthropic + MODEL_ID=us.anthropic.claude-opus-4-8
-# to call Claude Opus 4.8 via the Anthropic SDK instead (needs Bedrock model access). SPEC.md §11.
+# to call Claude Opus 4.8 via the Anthropic SDK instead (needs Bedrock model access).
 MODEL_PROVIDER = os.environ.get('MODEL_PROVIDER', 'bedrock')
 MODEL_ID = os.environ.get('MODEL_ID', 'us.amazon.nova-2-lite-v1:0')
 MAX_TOKENS = int(os.environ.get('MAX_TOKENS', '1024'))
-AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')  # runtime-injected (reserved key, §0)
+AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')  # runtime-injected (reserved key)
 HOOK_PREFIX = '/aws/lambda-microvms/runtime/v1/'
 
 logging.basicConfig(level=os.environ.get('LOG_LEVEL', 'INFO').upper(), format='%(asctime)s %(levelname)s %(message)s')
@@ -126,7 +126,7 @@ class WorkerHandler(BaseHTTPRequestHandler):
     def _handle_hook(self, hook: str) -> None:
         """Lifecycle hooks: /run admits traffic when it returns HTTP 200; per-VM secrets/refs arrive in its payload.
 
-        UUIDs/secrets must be generated HERE with a CSPRNG (never at build — snapshots are shared, §5.8).
+        UUIDs/secrets must be generated HERE with a CSPRNG (never at build — snapshots are shared).
         """
         logger.info('lifecycle hook invoked: %s', hook)
         if hook in ('run', 'resume', 'suspend', 'terminate'):
@@ -140,7 +140,7 @@ class WorkerHandler(BaseHTTPRequestHandler):
             result = model_completion(prompt)
             logger.info('bedrock — provider=%s model=%s result=%r', MODEL_PROVIDER, MODEL_ID, result)
             self._send_json(HTTPStatus.OK, {'mode': 'bedrock', 'provider': MODEL_PROVIDER, 'model': MODEL_ID, 'result': result})
-        except Exception as exc:  # capture the WHOLE error body — the spike's 500 was undiagnosable without it (§0)
+        except Exception as exc:  # capture the WHOLE error body — a bare 500 is undiagnosable without it
             logger.exception('bedrock tier failed (provider=%s model=%s)', MODEL_PROVIDER, MODEL_ID)
             self._send_json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,

@@ -1,19 +1,19 @@
 # Sample MicroVM app image — tiers 1 (echo) + 2 (a model call on Bedrock).
-# Layered on the AWS-managed al2023-1 base image (SPEC.md §11). Same base the Phase-2.0
-# spike proved end-to-end (build -> run -> auth -> ingress -> /echo).
+# Layered on the AWS-managed al2023-1 base image, proven end-to-end
+# (build -> run -> auth -> ingress -> /echo).
 FROM public.ecr.aws/docker/library/python:3.14-slim
 
 # Everything is installed at BUILD time (snapshotted) — no ALL os-capability needed at runtime.
 # boto3 drives the default Nova/Converse path; anthropic drives the opt-in Opus path.
-# --no-cache-dir keeps the snapshot small (§5.8: minimize snapshot).
+# --no-cache-dir keeps the snapshot small.
 RUN pip install --no-cache-dir boto3 anthropic
 
-# --- Model routing for the /bedrock worker tier (non-secret; SPEC.md §11) ---------------------
+# --- Model routing for the /bedrock worker tier (non-secret) -----------------------------------
 # Default: Amazon Nova 2 Lite via the boto3 Bedrock Converse API (INFERENCE_PROFILE-only; the
-# us. profile is ACTIVE in us-east-1, §0). To use Claude Opus 4.8 via the Anthropic SDK instead
+# us. profile is ACTIVE in us-east-1). To use Claude Opus 4.8 via the Anthropic SDK instead
 # (needs Bedrock model access), override at build/run time:
 #     MODEL_PROVIDER=anthropic  MODEL_ID=us.anthropic.claude-opus-4-8
-# NOTE: AWS_REGION must NOT be set here — the MicroVM runtime injects it (reserved key, §0).
+# NOTE: AWS_REGION must NOT be set here — the MicroVM runtime injects it (reserved key).
 ENV MODEL_PROVIDER=bedrock \
     MODEL_ID=us.amazon.nova-2-lite-v1:0
 
