@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lambda-microvm-cdk"
-version = "0.0.1"
+version = "0.1.0"
 description = "Reusable AWS CDK (Python) construct for provisioning AWS Lambda MicroVM images and launchers."
 readme = "README.md"
 license = "MIT-0"
@@ -38,6 +38,9 @@ dev = [
     "cdk-nag>=2.35,<3",  # v3 is an experimental rework (no NagSuppressions/Aspects API yet); the stable v2 API is what we target
     "anthropic[bedrock]",  # sample worker tier 2 (Claude-on-Bedrock via AnthropicBedrockMantle); enables mypy to typecheck sample/microvm_app
     "zensical>=0.0.50",
+    # VpcV2 / SubnetV2 for the SAMPLE's egress VPC only — the library construct is BYO-VPC and uses just
+    # stable aws_cdk.aws_ec2 types, so consumers never need this alpha module. Version-locked to aws-cdk-lib.
+    "aws-cdk-aws-ec2-alpha>=2.261.0a0,<3.0.0",
 ]
 
 [project.urls]

@@ -23,7 +23,7 @@ Lambda MicroVMs split cleanly into two planes, which is the central design fact 
 | Plane | What | CloudFormation? | Where it lives here |
 |-------|------|-----------------|---------------------|
 | **Image** | `Dockerfile`+app → zip → S3 → build & snapshot | ✅ `AWS::Lambda::MicrovmImage` | the `MicrovmImage` construct |
-| **Network connector** | VPC egress (or AWS-managed ingress/internet ARNs) | ✅ `AWS::Lambda::NetworkConnector` | networking helpers (Phase 3) |
+| **Network connector** | VPC egress (or AWS-managed ingress/internet ARNs) | ✅ `AWS::Lambda::NetworkConnector` | the `MicrovmNetworkConnector` construct |
 | **Running instance** | `RunMicrovm`/`Suspend`/`Resume`/`Terminate`/auth token | ❌ runtime API only | boto3 from app/test code (E2E fixture) |
 
 **Implication:** images and connectors are declarative CDK; *running* a MicroVM is a runtime API
@@ -31,10 +31,44 @@ call, driven by boto3 — in this repo, from the E2E pytest fixture using the st
 outputs. There is intentionally **no launcher Lambda / API Gateway / WAF** in the current scope (a
 thin launcher is a deferred, opt-in add-on).
 
+### Network architecture (VPC egress)
+
+By default a MicroVM egresses to the public internet. `MicrovmNetworkConnector` (BYO-VPC) instead routes
+outbound traffic through your VPC. The connector's ENIs live in **private** subnets and carry a security
+group that **is** the egress policy; a NAT gateway in a **public** subnet gives that traffic a path to the
+internet (needed because the *image build* egresses through this same connector — see §5):
+
+```mermaid
+flowchart LR
+    vm["MicroVM<br/>image build + runtime"]
+
+    subgraph vpc["Your VPC — BYO · e.g. 10.0.0.0/16 · REJECT flow logs"]
+        direction TB
+        subgraph priv["Private subnets · PRIVATE_WITH_EGRESS · 2 AZs"]
+            eni["Connector ENIs<br/>SG = egress policy:<br/>deny-all + allow tcp/443 → 0.0.0.0/0"]
+        end
+        subgraph pub["Public subnets · 2 AZs"]
+            nat["NAT Gateway + Elastic IP"]
+        end
+        igw["Internet Gateway"]
+    end
+
+    net(("Internet<br/>public.ecr.aws · PyPI<br/>Bedrock · CloudWatch"))
+
+    vm -->|"outbound via egress connector"| eni
+    eni -->|"route 0.0.0.0/0 → NAT"| nat
+    nat -->|"route 0.0.0.0/0 → IGW"| igw
+    igw <--> net
+```
+
+The **security group** is the only egress gate (deny-all + explicit allows, stateful); the **NAT gateway
+has no rules** — it only permits outbound-initiated flows and blocks unsolicited inbound. Full write-up:
+[docs/custom_egress.md](docs/custom_egress.md).
+
 ## 3. Public API (surface)
 
-The public API is the single **`LambdaMicroVM`** construct, exported from the package root;
-supporting internals are private under `_impl/`.
+The public API is **`LambdaMicroVM`** plus **`MicrovmNetworkConnector`**, exported from the package
+root; supporting internals are private under `_impl/`.
 
 - **`LambdaMicroVM`** — zips a source (dir with `Dockerfile`, `.zip`, or an `s3_assets.Asset`),
   uploads to S3, creates least-privilege build + VM-execution roles, resolves the base-image
@@ -42,22 +76,42 @@ supporting internals are private under `_impl/`.
   (image ARN, VM execution role, connector ARNs, log group name) that the runtime caller/E2E fixture
   feeds into `run_microvm`. It emits **no `CfnOutput`s** — the consuming stack (see `sample_stack.py`)
   owns those, so the construct never pollutes a consumer's template.
+- **`MicrovmNetworkConnector`** — opt-in **VPC egress** (`AWS::Lambda::NetworkConnector`, egress-only).
+  **BYO-VPC** (takes an `ec2.IVpc` — it does not build one; VPC topology, especially internet egress, is
+  the consumer's decision). Owns a security group whose rules **are** the egress policy (deny-all default;
+  opt in with CDK-native `ec2.Peer`/`ec2.Port` via `.security_group.add_egress_rule(...)`) and a
+  least-privilege ENI operator role (the AWS-documented operator policy). Exposes `connector_arn` and the
+  connector object itself, both accepted by `LambdaMicroVM(egress_connectors=[...])`. Registry-confirmed
+  L1: `AssociatedComputeResourceTypes=['MicroVm']`, `NetworkProtocol` `IPv4`/`DualStack`, 1–16 subnets.
+  Inbound stays the AWS-managed `ALL_INGRESS` endpoint (no VPC ingress).
+- **Build-time vs run-time egress** (a validated gotcha): `LambdaMicroVM(egress_connectors=…)` is the
+  **image build's** egress — the build runs the `Dockerfile` in a MicroVM, so that connector's VPC must
+  reach the base image + package repos (a **NAT gateway**, or private mirrors + endpoints). Build-time and
+  run-time connectors can differ; the sample builds a `VpcV2` **with a NAT gateway** so the image can bake
+  the connector, and also passes it per-launch to `run_microvm`.
+- **Ingress is runtime, not declarative** — access is a short-lived (≤60 min) scoped-ports JWE token
+  minted per launch (`create_microvm_auth_token`, `allowedPorts` = boto3 `PortSpecification` union). The
+  construct library ships **no** runtime helper for this — it's a plain `boto3` call driven from the
+  consumer/E2E layer (a small `create_auth_token` helper in the E2E `conftest`), keeping the published
+  wheel CDK/infra-only.
 - **No duplicate types** — inputs reuse CDK's own: `aws_lambda.Architecture` (`ARM_64` only
-  today), `aws_logs.RetentionDays`, `aws_s3_assets.Asset`; memory is a plain `memory_mib` int,
-  `hooks` a verbatim CFN dict.
+  today), `aws_logs.RetentionDays`, `aws_s3_assets.Asset`, `ec2.IVpc`/`ec2.Peer`/`ec2.Port`; memory is a
+  plain `memory_mib` int, `hooks` a verbatim CFN dict.
 - **Escape hatch** — `overrides: dict` merged verbatim into the L1 `Properties`, so no consumer
   is ever blocked on an un-modeled field.
 
 ## 4. Repository layout
 
 ```text
-├── SPEC.md · ARCH.md · CLAUDE.md · README.md · LICENSE (MIT-0)
+├── ARCH.md · CLAUDE.md · README.md · LICENSE (MIT-0)
 ├── Makefile                      # dev + pipeline entrypoints
 ├── pyproject.toml · uv.lock      # uv + hatchling + ruff/mypy; deps incl. boto3
 ├── zensical.toml + docs/         # GitHub Pages docs
 ├── src/lambda_microvm_cdk/
 │   ├── __init__.py               # public exports only
-│   └── _impl/                    # PRIVATE implementation (image, networking, security, base_image, types, props)
+│   ├── microvm.py                # LambdaMicroVM construct
+│   ├── network_connector.py      # MicrovmNetworkConnector construct (VPC egress)
+│   └── _impl/                    # PRIVATE implementation (base_image, security, …)
 ├── sample/                       # deployable sample CDK app (E2E target)
 │   ├── app.py · sample_stack.py
 │   └── microvm_app/              # what runs INSIDE the VM (Dockerfile + tiered worker)
@@ -77,19 +131,18 @@ Security is a first-class design goal:
   tokens scoped to `allowedPorts=[8080]`; a `maximumDurationInSeconds` cost cap on every launch.
 - **No secrets in images.** Image `EnvironmentVariables` are snapshotted and shared — secrets come
   from SSM/Secrets Manager at runtime or the per-VM `runHookPayload`.
-- **VPC egress** (opt-in) via `AWS::Lambda::NetworkConnector` backed by a 2-AZ VpcV2.
+- **VPC egress** (opt-in, **BYO-VPC**) via `AWS::Lambda::NetworkConnector`: the connector's security
+  group **is** the deny-all-by-default egress policy, and a least-privilege operator role (the
+  AWS-documented `CreateNetworkInterface`/`CreateTags` policy) creates the ENIs.
 
 ## 6. The sample worker (tiered, to isolate risk)
 
-`sample/microvm_app/worker.py` serves `:8080` with three tiers so the library's tests never depend on
-the agent working:
+`sample/microvm_app/worker.py` serves `:8080` with three tiers so the deterministic gate never depends
+on a model (or the agent) working:
 
-1. **`echo`** — deterministic no-model transform. **This is what E2E asserts on.**
-2. **`bedrock`** — one Bedrock **Converse** call to Nova 2 Lite (default) or an `AnthropicBedrockMantle` call to Opus 4.8 (opt-in).
+1. **`echo`** — deterministic no-model transform. **The E2E gate.**
+2. **`bedrock`** — one Bedrock **Converse** call to Nova 2 Lite (default) or an `AnthropicBedrockMantle` call to Opus 4.8 (opt-in). A second E2E test drives this: it asks the model to sum two random numbers and asserts the reply.
 3. **`agent`** — opt-in Claude Code headless (`claude -p`). Highest first-try risk; gates nothing.
-
-Spike status (2026-07-11): tiers "build → run → auth → ingress → echo" are **proven end-to-end** on
-real AWS; the in-VM Bedrock call returned a 500 and is **still unproven** (diagnosis deferred).
 
 ## 7. Testing strategy
 
@@ -99,10 +152,11 @@ real AWS; the in-VM Bedrock call returned a 500 and is **still unproven** (diagn
 - **cdk-nag `AwsSolutionsChecks`** (AWS-recommended pack) applied as an app Aspect; runs at synth so
   `make synth`/unit tests fail on any `AwsSolutions-*` finding — suppress only with a written reason.
 - **Synth smoke** — `make synth` in CI.
-- **E2E (gated, real AWS)** — a pytest fixture reads stack outputs → `run_microvm` (with a TTL cap) →
-  polls `RUNNING` → mints a scoped auth token → hits the endpoint and asserts (echo tier) →
-  **`terminate_microvm` in teardown**. Only runs when explicitly requested; always leaves the account
-  clean.
+- **E2E (gated, real AWS)** — a pytest fixture reads stack outputs → `run_microvm` (with a TTL cap,
+  egress via the **VPC connector** — the sample's VPC reaches Bedrock + the internet through a NAT
+  gateway) → polls `RUNNING` → mints a scoped auth token (`create_auth_token` conftest helper, port 8080) →
+  runs **two tests** (deterministic `echo`, and a `bedrock` call that sums two random numbers) →
+  **`terminate_microvm` in teardown**. Only runs when explicitly requested; always leaves the account clean.
 
 ## 8. Build, deploy & tooling
 

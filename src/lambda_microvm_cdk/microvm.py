@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any, Literal
 
-from aws_cdk import CfnTag, Names, RemovalPolicy, Stack
+from aws_cdk import CfnTag, Names, RemovalPolicy, Stack, Token
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_logs as logs
@@ -15,6 +15,7 @@ from constructs import Construct
 
 from lambda_microvm_cdk._impl import security
 from lambda_microvm_cdk._impl.base_image import resolve_base_image_arn, resolve_base_image_version
+from lambda_microvm_cdk.network_connector import MicrovmNetworkConnector
 
 _NAME_PATTERN = re.compile(r'^[a-zA-Z0-9-_]{1,64}$')
 _VALID_OS_CAPABILITIES = frozenset({'ALL'})
@@ -26,9 +27,6 @@ _MAX_ENV_KEY_LENGTH = 256
 _MAX_ENV_VALUE_LENGTH = 4096
 _MAX_EGRESS_CONNECTORS = 10
 _RESERVED_ENV_KEYS = frozenset({'AWS_REGION'})
-# Whole-segment matching (split on '_') so legit config like MAX_TOKENS is not flagged.
-_SECRET_LIKE_SEGMENTS = frozenset({'SECRET', 'SECRETS', 'TOKEN', 'PASSWORD', 'PASSWD', 'APIKEY', 'CREDENTIAL', 'CREDENTIALS'})
-_SECRET_LIKE_SEGMENT_PAIRS = frozenset({('API', 'KEY'), ('PRIVATE', 'KEY'), ('ACCESS', 'KEY'), ('AUTH', 'TOKEN')})
 
 
 class LambdaMicroVM(Construct):
@@ -65,10 +63,16 @@ class LambdaMicroVM(Construct):
         os_capabilities: Additional OS capabilities. Only ``'ALL'`` exists and it is a documented
             privilege escalation — default is none (least privilege).
         environment: Env vars baked into the image at build time (max 50). **Snapshotted and shared
-            across every VM from this image — never secrets**; secret-looking keys raise. ``AWS_REGION``
-            is reserved (the runtime injects it) and raises.
-        egress_connectors: Network-connector ARNs baked into the image (max 10). Usually left empty —
-            connectors are normally chosen per-launch in ``run_microvm``.
+            across every VM from this image — never put secrets here** (fetch them at runtime from
+            SSM/Secrets Manager, or pass per-VM via ``runHookPayload``). ``AWS_REGION`` is reserved (the
+            runtime injects it) and raises.
+        egress_connectors: **Build-time** egress connectors baked into the image (max 10) — each a
+            ``MicrovmNetworkConnector`` or a raw ARN string. The build runs your ``Dockerfile`` inside a
+            MicroVM using *this* egress, so it must reach whatever the build needs (``public.ecr.aws``,
+            package repos → the **default public internet**, or a VPC with a NAT gateway / private mirrors;
+            a VPC connector with no route to those **fails the build**). Build-time and run-time connectors
+            can differ — for VPC egress only at *runtime*, leave this empty and pass the connector
+            per-launch to ``run_microvm``. Literal ARNs are validated; deploy-time tokens pass through.
         enable_logging: ``True`` (default) streams build + runtime logs to CloudWatch; ``False``
             disables logging entirely (not recommended — CloudWatch is the auditable default).
         hooks: Typed lifecycle hooks (``aws_lambda.CfnMicrovmImage.HooksProperty``, nesting
@@ -104,7 +108,7 @@ class LambdaMicroVM(Construct):
         memory_mib: int = 2048,
         os_capabilities: list[Literal['ALL']] | None = None,
         environment: dict[str, str] | None = None,
-        egress_connectors: list[str] | None = None,
+        egress_connectors: list[str | MicrovmNetworkConnector] | None = None,
         enable_logging: bool = True,
         hooks: lambda_.CfnMicrovmImage.HooksProperty | None = None,
         build_role: iam.IRole | None = None,
@@ -118,7 +122,8 @@ class LambdaMicroVM(Construct):
 
         environment = dict(environment or {})
         os_capabilities = list(os_capabilities or [])
-        egress_connectors = list(egress_connectors or [])
+        # Accept MicrovmNetworkConnector instances or raw ARNs — coerce to the ARN strings the L1 wants.
+        egress_arns: list[str] = [c.connector_arn if isinstance(c, MicrovmNetworkConnector) else c for c in (egress_connectors or [])]
 
         self._validate_architecture(architecture)
         self._validate_environment(environment)
@@ -129,8 +134,9 @@ class LambdaMicroVM(Construct):
             )
         if invalid := set(os_capabilities) - _VALID_OS_CAPABILITIES:
             raise ValueError(f'unknown os_capabilities {sorted(invalid)} — only {sorted(_VALID_OS_CAPABILITIES)} exist today')
-        if len(egress_connectors) > _MAX_EGRESS_CONNECTORS:
-            raise ValueError(f'egress_connectors supports at most {_MAX_EGRESS_CONNECTORS} entries, got {len(egress_connectors)}')
+        if len(egress_arns) > _MAX_EGRESS_CONNECTORS:
+            raise ValueError(f'egress_connectors supports at most {_MAX_EGRESS_CONNECTORS} entries, got {len(egress_arns)}')
+        self._validate_egress_connectors(egress_arns)
 
         self._name = self._resolve_name(name)
         self._log_group_name = f'/aws/lambda/microvms/{self._name}'
@@ -164,7 +170,7 @@ class LambdaMicroVM(Construct):
             cpu_configurations=[lambda_.CfnMicrovmImage.CpuConfigurationProperty(architecture='ARM_64')],  # only value the service accepts today
             resources=[lambda_.CfnMicrovmImage.ResourcesProperty(minimum_memory_in_mib=memory_mib)],
             additional_os_capabilities=os_capabilities,
-            egress_network_connectors=egress_connectors,
+            egress_network_connectors=egress_arns,
             environment_variables=[lambda_.CfnMicrovmImage.EnvironmentVariableProperty(key=key, value=value) for key, value in environment.items()],
             hooks=hooks or lambda_.CfnMicrovmImage.HooksProperty(),  # default {} = all lifecycle hooks disabled
             logging=logging,
@@ -270,6 +276,22 @@ class LambdaMicroVM(Construct):
             )
 
     @staticmethod
+    def _validate_egress_connectors(egress_connectors: list[str]) -> None:
+        # Accepts both a customer connector (arn:<p>:lambda:<region>:<account>:network-connector:nc-…) and an
+        # AWS-managed one (…:aws:network-connector:aws-network-connector:INTERNET_EGRESS). A CDK token — the usual
+        # case, e.g. MicrovmNetworkConnector.connector_arn (Fn::GetAtt) — has no value at synth, so it is skipped;
+        # only literal strings are checked, to catch a hand-typed ARN mistake.
+        for arn in egress_connectors:
+            if Token.is_unresolved(arn):
+                continue
+            if not (arn.startswith('arn:') and ':lambda:' in arn and ':network-connector:' in arn):
+                raise ValueError(
+                    f'egress_connectors entry {arn!r} is not a Lambda network-connector ARN — expected e.g. '
+                    "'arn:aws:lambda:<region>:<account>:network-connector:nc-…'. Pass a "
+                    'MicrovmNetworkConnector.connector_arn or a managed connector ARN.'
+                )
+
+    @staticmethod
     def _validate_environment(environment: dict[str, str]) -> None:
         if len(environment) > _MAX_ENVIRONMENT_VARIABLES:
             raise ValueError(f'environment supports at most {_MAX_ENVIRONMENT_VARIABLES} variables, got {len(environment)}')
@@ -280,11 +302,3 @@ class LambdaMicroVM(Construct):
                 raise ValueError(f'environment key {key!r} must be 1-{_MAX_ENV_KEY_LENGTH} chars with no whitespace')
             if len(value) > _MAX_ENV_VALUE_LENGTH:
                 raise ValueError(f'environment value for {key!r} exceeds {_MAX_ENV_VALUE_LENGTH} chars')
-            segments = key.upper().split('_')
-            adjacent_pairs = set(zip(segments, segments[1:], strict=False))
-            if _SECRET_LIKE_SEGMENTS.intersection(segments) or _SECRET_LIKE_SEGMENT_PAIRS.intersection(adjacent_pairs):
-                raise ValueError(
-                    f'environment key {key!r} looks like a secret — image EnvironmentVariables are snapshotted and shared '
-                    'across every VM from this image. Pass secret references via runHookPayload or fetch from SSM/Secrets '
-                    'Manager at runtime instead.'
-                )

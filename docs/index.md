@@ -19,8 +19,10 @@ pip install lambda-microvm-cdk
   upload to S3, create least-privilege build + VM-execution roles, resolve the base-image version,
   and build a snapshotted image. Exposes typed properties (`image_arn`, `execution_role`,
   `ingress_connector_arn` / `egress_connector_arn`, `log_group_name`) and `grant_run(principal)`.
-- **Runtime** (run/suspend/terminate) is a boto3 call driven from your app or the E2E fixture, wired
-  from those properties — there is no launcher Lambda / API Gateway / WAF in the current scope.
+- **`MicrovmNetworkConnector`** — opt-in **VPC egress**: bring your own VPC and it wires up the rest —
+  the `AWS::Lambda::NetworkConnector`, a security group that **is** the egress policy (deny-all by
+  default), and a least-privilege ENI operator role. Pass it straight to
+  `LambdaMicroVM(egress_connectors=[...])`. See [MicroVM Image](construct.md) and [Network Connector](custom_egress.md).
 
 Parameter-driven with secure defaults (arm64, no extra OS capabilities, CloudWatch logging),
 every AWS knob overridable, plus an `overrides` escape hatch for anything not yet modeled.

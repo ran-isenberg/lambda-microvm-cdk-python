@@ -1,8 +1,8 @@
 """E2E — send a prompt to the running MicroVM and assert the result.
 
-The deterministic **echo tier is the library's E2E gate** (zero model dependency).
-The Bedrock tier is exercised diagnostically: its full error body is surfaced (the
-Phase-2.0 spike's 500 was undiagnosable without it) but it does not gate the library.
+Two tests run against one VM: the deterministic **echo tier is the library's gate** (zero model
+dependency), and a **bedrock** test that asks the model to add two random numbers and asserts the
+reply. On failure the bedrock test surfaces the full captured error body for diagnosis.
 """
 
 from __future__ import annotations

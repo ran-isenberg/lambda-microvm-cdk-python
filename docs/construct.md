@@ -1,13 +1,14 @@
-# Construct
+# MicroVM image — `LambdaMicroVM`
 
-The library exposes a single CDK construct, **`LambdaMicroVM`**, exported from the package root.
+The library exposes two CDK constructs from the package root: **`LambdaMicroVM`** (this page) and
+**`MicrovmNetworkConnector`** (opt-in VPC egress — see [Network Connector](custom_egress.md)).
 Supporting internals live under `_impl/` and are not part of the supported surface.
 
-## `LambdaMicroVM`
+`LambdaMicroVM` provisions `AWS::Lambda::MicrovmImage` from a source asset with least-privilege build +
+VM-execution roles, a resolved base-image version, secure defaults, input validation, and an
+`overrides` escape hatch. All keyword arguments are keyword-only.
 
-Provisions `AWS::Lambda::MicrovmImage` from a source asset with least-privilege build + VM-execution
-roles, a resolved base-image version, secure defaults, input validation, and an `overrides` escape
-hatch. All keyword arguments are keyword-only.
+## Inputs
 
 | Prop | Type | Default | Notes |
 |------|------|---------|-------|
@@ -20,7 +21,7 @@ hatch. All keyword arguments are keyword-only.
 | `memory_mib` | `int` | `2048` | tier `512 \| 1024 \| 2048 \| 4096 \| 8192` |
 | `os_capabilities` | `list[Literal["ALL"]] \| None` | `[]` | `ALL` is a privilege escalation |
 | `environment` | `dict[str, str] \| None` | `{}` | never secrets — snapshotted |
-| `egress_connectors` | `list[str] \| None` | `[]` | max 10 |
+| `egress_connectors` | `list[str \| MicrovmNetworkConnector] \| None` | `[]` | max 10; **build-time** egress ([Network Connector](custom_egress.md)) |
 | `enable_logging` | `bool` | `True` | CloudWatch group pinned; `False` → `Disabled` |
 | `hooks` | `CfnMicrovmImage.HooksProperty \| None` | `None` (`{}` = disabled) | typed L1 struct |
 | `build_role` | `iam.IRole \| None` | created | bring-your-own least-priv |
@@ -30,24 +31,29 @@ hatch. All keyword arguments are keyword-only.
 | `tags` | `dict[str, str] \| None` | `{}` | cost-allocation friendly |
 | `overrides` | `dict[str, Any] \| None` | `{}` | merged verbatim into L1 `Properties` |
 
-### Properties
+## Properties
 
-`image_arn`, `state`, `latest_active_image_version`, `image_name`, `log_group_name`, `build_role`,
-`execution_role`, `ingress_connector_arn` (`ALL_INGRESS`), `egress_connector_arn`
-(`INTERNET_EGRESS`).
+- **`image_arn`** — `Fn::GetAtt ImageArn` (deploy-time token); the id you pass to `run_microvm`.
+- **`state`** — `Fn::GetAtt State` (deploy-time token).
+- **`latest_active_image_version`** — `Fn::GetAtt LatestActiveImageVersion` (deploy-time token).
+- **`image_name`** — the resolved `Name` (stable across synths; changing it forces replacement).
+- **`log_group_name`** — the service-owned log group, `/aws/lambda/microvms/<image-name>`.
+- **`build_role`** — the IAM role used to build the image (created least-privilege unless supplied).
+- **`execution_role`** — the IAM role the running VM assumes (created least-privilege unless supplied).
+- **`ingress_connector_arn`** — AWS-managed `ALL_INGRESS` connector ARN (each VM gets a unique TLS endpoint).
+- **`egress_connector_arn`** — AWS-managed `INTERNET_EGRESS` connector ARN (the default public egress).
 
-### Methods
+## Methods
 
-`grant_run(grantee)` — attaches least-privilege `lambda:RunMicrovm*` (+ `iam:PassRole` on the VM
-execution role) to a runtime-caller principal, scoped to this image ARN.
+- **`grant_run(grantee)`** — gives a principal (a launcher Lambda, ECS task, or CI role) least-privilege
+  permission to launch and operate a MicroVM from **this** image: `lambda:RunMicrovm` on the image, the VM
+  lifecycle + auth-token actions, and `iam:PassRole` on the VM execution role. The only public method.
 
 ## Runtime (boto3, not CloudFormation)
 
 Running a MicroVM is a runtime API call — see [Getting Started](getting_started.md#launching-a-vm-runtime-boto3).
-A thin launcher Lambda (and, separately, an API-Gateway/WAF front door) is a **deferred, opt-in**
-add-on, not in the current scope.
 
-## VPC egress (Phase 3)
+## VPC egress
 
-`AWS::Lambda::NetworkConnector` + `aws_ec2_alpha` VpcV2 (2 AZs) behind an `EgressConnector.vpc(...)`
-helper. Off by default (default egress is internet). Not yet implemented.
+To route a VM's outbound traffic through your own VPC, pair it with **`MicrovmNetworkConnector`** —
+see [Network Connector](custom_egress.md).
