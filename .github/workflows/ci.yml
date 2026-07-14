@@ -21,11 +21,6 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [main]
-  # No push:[main] trigger — every change reaches main through a PR that already ran this full
-  # pipeline, so re-running it (incl. the gated deploy_e2e) on the merge commit is redundant.
-  # Periodic real-AWS coverage of main comes from the weekly schedule below.
-  schedule:
-    - cron: "0 4 * * 1" # weekly, Monday 04:00 UTC — scheduled real-AWS E2E
 
 jobs:
   quality_standards:

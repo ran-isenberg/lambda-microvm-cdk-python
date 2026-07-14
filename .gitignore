@@ -13,6 +13,7 @@ venv/
 # CDK
 cdk.out/
 .cdk.staging/
+cdk.context.json
 *.d.ts
 
 # Docs (zensical build output)
