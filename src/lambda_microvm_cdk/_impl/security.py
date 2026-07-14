@@ -8,6 +8,10 @@ from constructs import Construct
 
 _MICROVM_SERVICE_PRINCIPAL = 'lambda.amazonaws.com'
 
+CONNECTOR_OPERATOR_ROLE_DESCRIPTION = 'Least-privilege operator role Lambda assumes to manage the MicroVM connector ENIs'
+# The managed-resource operator that creates the connector's ENIs — the value CreateTags is conditioned on.
+_CONNECTOR_MANAGED_RESOURCE_OPERATOR = 'network-connectors.lambda.amazonaws.com'
+
 
 def _microvm_service_trust(role: iam.Role) -> None:
     """Add ``sts:TagSession`` to the trust policy (the service assumes with session tags)."""
@@ -84,6 +88,51 @@ def build_vm_execution_role(scope: Construct, construct_id: str, *, group_arn: s
     )
     _microvm_service_trust(role)
     return role
+
+
+def build_connector_operator_role(scope: Construct, construct_id: str) -> iam.Role:
+    """The role Lambda assumes to create the connector's elastic network interfaces.
+
+    Reproduces **verbatim** the policy AWS documents for a ``NetworkConnector`` operator role (Lambda
+    MicroVM *Networking* guide): ``ec2:CreateNetworkInterface`` on ``ec2:*:*:network-interface|subnet|
+    security-group/*`` (region/account are wildcards — Lambda creates the ENIs in its own context, so
+    pinning them would deny ``CreateNetworkInterface`` and the connector would never become ACTIVE), plus
+    ``ec2:CreateTags`` on ENIs conditioned on the connector operator
+    (``network-connectors.lambda.amazonaws.com``) so the grant can't tag arbitrary interfaces. Lambda
+    performs Describe/Delete itself, so the role needs neither. Trust: ``lambda.amazonaws.com`` assumes it
+    via ``sts:AssumeRole`` (no session tags), matching the documented operator-role trust policy. Only the
+    partition is resolved from ``Stack.of`` (portability); it renders to the documented ``arn:aws:…``. Pass
+    a BYO ``operator_role`` to override.
+    """
+    # region/account intentionally wildcarded to match the AWS-documented operator policy exactly.
+    ec2_scope = f'arn:{Stack.of(scope).partition}:ec2:*:*'
+    return iam.Role(
+        scope,
+        construct_id,
+        assumed_by=iam.ServicePrincipal(_MICROVM_SERVICE_PRINCIPAL),
+        description=CONNECTOR_OPERATOR_ROLE_DESCRIPTION,
+        inline_policies={
+            'MicrovmConnectorEnis': iam.PolicyDocument(
+                statements=[
+                    iam.PolicyStatement(
+                        sid='CreateENI',
+                        actions=['ec2:CreateNetworkInterface'],
+                        resources=[
+                            f'{ec2_scope}:network-interface/*',
+                            f'{ec2_scope}:subnet/*',
+                            f'{ec2_scope}:security-group/*',
+                        ],
+                    ),
+                    iam.PolicyStatement(
+                        sid='TagENI',
+                        actions=['ec2:CreateTags'],
+                        resources=[f'{ec2_scope}:network-interface/*'],
+                        conditions={'StringEquals': {'ec2:ManagedResourceOperator': _CONNECTOR_MANAGED_RESOURCE_OPERATOR}},
+                    ),
+                ]
+            )
+        },
+    )
 
 
 def grant_run(scope: Construct, grantee: iam.IGrantable, *, image_arn: str, execution_role: iam.IRole | None) -> None:

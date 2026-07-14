@@ -132,6 +132,22 @@ wheels = [
 ]
 
 [[package]]
+name = "aws-cdk-aws-ec2-alpha"
+version = "2.261.0a0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aws-cdk-lib" },
+    { name = "constructs" },
+    { name = "jsii" },
+    { name = "publication" },
+    { name = "typeguard" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f4/a6/82ce86c1ef6db5a49ee090a3618bfd06a2f2b0b5464c715bcbdaec99f20e/aws_cdk_aws_ec2_alpha-2.261.0a0.tar.gz", hash = "sha256:03e35d65da5b08a7f3965aa0118a5d993699f58d16d4927ce19609cc40ce5dea", size = 358120, upload-time = "2026-07-02T16:32:31.606Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/d6/2bc09bee2571be288a2ecbe99e6b3b5b1467b0dc0f1bfd86f2cc5ba88790/aws_cdk_aws_ec2_alpha-2.261.0a0-py3-none-any.whl", hash = "sha256:ac853104f9e4e0293955943bc437565e3dcc7588ab4518f6b20cea2cd23c8e5e", size = 339796, upload-time = "2026-07-02T16:31:37.104Z" },
+]
+
+[[package]]
 name = "aws-cdk-cloud-assembly-schema"
 version = "54.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -634,7 +650,7 @@ wheels = [
 
 [[package]]
 name = "lambda-microvm-cdk"
-version = "0.0.1"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "aws-cdk-lib" },
@@ -645,6 +661,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "anthropic", extra = ["bedrock"] },
+    { name = "aws-cdk-aws-ec2-alpha" },
     { name = "cdk-nag" },
     { name = "mypy" },
     { name = "pytest" },
@@ -665,6 +682,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "anthropic", extras = ["bedrock"] },
+    { name = "aws-cdk-aws-ec2-alpha", specifier = ">=2.261.0a0,<3.0.0" },
     { name = "cdk-nag", specifier = ">=2.35,<3" },
     { name = "mypy", specifier = ">=1.11" },
     { name = "pytest", specifier = ">=8" },

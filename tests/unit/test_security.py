@@ -7,13 +7,15 @@ from collections.abc import Callable
 from typing import Any
 
 from aws_cdk import Stack
+from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_iam as iam
 from aws_cdk.assertions import Template
 
-from lambda_microvm_cdk import LambdaMicroVM
+from lambda_microvm_cdk import LambdaMicroVM, MicrovmNetworkConnector
 
 BUILD_ROLE_DESCRIPTION = 'Least-privilege build role for the Lambda MicroVM image build'
 EXECUTION_ROLE_DESCRIPTION = 'Least-privilege execution role assumed by the running MicroVM'
+OPERATOR_ROLE_DESCRIPTION = 'Least-privilege operator role Lambda assumes to manage the MicroVM connector ENIs'
 
 
 def _image(stack: Stack, source_dir: str) -> LambdaMicroVM:
@@ -105,6 +107,34 @@ def test_byo_build_and_execution_roles_are_respected(stack_factory: Callable[[],
     template = Template.from_stack(stack)
     assert not template.find_resources('AWS::IAM::Role', {'Properties': {'Description': BUILD_ROLE_DESCRIPTION}})
     assert not template.find_resources('AWS::IAM::Role', {'Properties': {'Description': EXECUTION_ROLE_DESCRIPTION}})
+
+
+def test_connector_operator_role_matches_documented_least_privilege(stack_factory: Callable[[], Stack]) -> None:
+    stack = stack_factory()
+    MicrovmNetworkConnector(stack, 'Egress', vpc=ec2.Vpc(stack, 'Vpc', max_azs=2))
+    role = _find_role(Template.from_stack(stack), OPERATOR_ROLE_DESCRIPTION)
+    statements = _statements(role)
+
+    # No global '*' resource anywhere, and no Describe/Delete — Lambda does those as the managed operator.
+    _assert_no_star_resources(statements)
+    actions = json.dumps([s['Action'] for s in statements])
+    assert 'ec2:DescribeNetworkInterfaces' not in actions and 'ec2:DeleteNetworkInterface' not in actions
+
+    create = next(s for s in statements if 'ec2:CreateNetworkInterface' in json.dumps(s['Action']))
+    rendered = json.dumps(create['Resource'])
+    assert 'network-interface/*' in rendered and 'subnet/*' in rendered and 'security-group/*' in rendered
+
+    tag = next(s for s in statements if 'ec2:CreateTags' in json.dumps(s['Action']))
+    assert 'network-interface/*' in json.dumps(tag['Resource'])
+    assert tag['Condition'] == {'StringEquals': {'ec2:ManagedResourceOperator': 'network-connectors.lambda.amazonaws.com'}}
+
+
+def test_connector_operator_role_trusts_microvm_service(stack_factory: Callable[[], Stack]) -> None:
+    stack = stack_factory()
+    MicrovmNetworkConnector(stack, 'Egress', vpc=ec2.Vpc(stack, 'Vpc', max_azs=2))
+    role = _find_role(Template.from_stack(stack), OPERATOR_ROLE_DESCRIPTION)
+    trust = json.dumps(role['AssumeRolePolicyDocument'])
+    assert 'lambda.amazonaws.com' in trust and 'sts:AssumeRole' in trust
 
 
 def test_grant_run_scopes_run_to_image_and_passrole_to_execution_role(stack_factory: Callable[[], Stack], app_source_dir: str) -> None:

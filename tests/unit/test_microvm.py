@@ -196,10 +196,14 @@ def test_reserved_aws_region_env_key_rejected(stack_factory: Callable[[], Stack]
         _vm(stack_factory(), app_source_dir, environment={'AWS_REGION': 'us-east-1'})
 
 
-def test_secret_like_env_keys_rejected_but_config_keys_pass(stack_factory: Callable[[], Stack], app_source_dir: str) -> None:
-    with pytest.raises(ValueError, match='looks like a secret'):
-        _vm(stack_factory(), app_source_dir, environment={'MY_API_KEY': 'sk-123'})
-    _vm(stack_factory(), app_source_dir, environment={'MAX_TOKENS': '1024'})  # whole-segment match — no false positive
+def test_env_keys_are_not_secret_filtered(stack_factory: Callable[[], Stack], app_source_dir: str) -> None:
+    # No secret-name heuristic — any valid key is accepted (can't detect secrets reliably; it's guidance only).
+    stack = stack_factory()
+    _vm(stack, app_source_dir, environment={'MY_API_KEY': 'x', 'MAX_TOKENS': '1024'})
+    Template.from_stack(stack).has_resource_properties(
+        MICROVM_IMAGE_TYPE,
+        {'EnvironmentVariables': Match.array_with([{'Key': 'MY_API_KEY', 'Value': 'x'}])},
+    )
 
 
 def test_too_many_env_vars_rejected(stack_factory: Callable[[], Stack], app_source_dir: str) -> None:
@@ -210,6 +214,52 @@ def test_too_many_env_vars_rejected(stack_factory: Callable[[], Stack], app_sour
 def test_too_many_egress_connectors_rejected(stack_factory: Callable[[], Stack], app_source_dir: str) -> None:
     with pytest.raises(ValueError, match='at most 10'):
         _vm(stack_factory(), app_source_dir, egress_connectors=[f'arn:aws:lambda:us-east-1:111122223333:network-connector:c{i}' for i in range(11)])
+
+
+def test_literal_egress_connector_arns_validated_and_rendered(stack_factory: Callable[[], Stack], app_source_dir: str) -> None:
+    stack = stack_factory()
+    arns = [
+        'arn:aws:lambda:us-east-1:111122223333:network-connector:nc-af10c36f-8bc1-4ecf-98fb-1726926ae577',  # customer
+        'arn:aws:lambda:us-east-1:aws:network-connector:aws-network-connector:INTERNET_EGRESS',  # managed
+    ]
+    _vm(stack, app_source_dir, egress_connectors=arns)
+    Template.from_stack(stack).has_resource_properties(MICROVM_IMAGE_TYPE, {'EgressNetworkConnectors': arns})
+
+
+@pytest.mark.parametrize(
+    'bad',
+    [
+        'nc-af10c36f',
+        'arn:aws:s3:::bucket/obj',
+        'arn:aws:lambda:us-east-1:111122223333:function:foo',
+        'arn:aws:lambda:us-east-1:111122223333:function:my-network-connector-fn',  # 'network-connector' in the name, not the resource type
+    ],
+)
+def test_invalid_literal_egress_connector_arn_rejected(stack_factory: Callable[[], Stack], app_source_dir: str, bad: str) -> None:
+    with pytest.raises(ValueError, match='not a Lambda network-connector ARN'):
+        _vm(stack_factory(), app_source_dir, egress_connectors=[bad])
+
+
+def test_deploy_time_token_egress_connector_arn_is_not_validated(stack_factory: Callable[[], Stack], app_source_dir: str) -> None:
+    from aws_cdk import Fn
+
+    stack = stack_factory()
+    # A deploy-time token (e.g. MicrovmNetworkConnector.connector_arn is an Fn::GetAtt) has no value at
+    # synth, so validation skips it — synth must succeed rather than reject the unresolved string.
+    _vm(stack, app_source_dir, egress_connectors=[Fn.import_value('SomeConnectorArn')])
+    Template.from_stack(stack).resource_count_is(MICROVM_IMAGE_TYPE, 1)
+
+
+def test_egress_connectors_accepts_connector_object(stack_factory: Callable[[], Stack], app_source_dir: str) -> None:
+    from aws_cdk import aws_ec2 as ec2
+
+    from lambda_microvm_cdk import MicrovmNetworkConnector
+
+    stack = stack_factory()
+    connector = MicrovmNetworkConnector(stack, 'Egress', vpc=ec2.Vpc(stack, 'Vpc', max_azs=2))
+    _vm(stack, app_source_dir, egress_connectors=[connector])  # object, not ARN string
+    image = next(iter(Template.from_stack(stack).find_resources(MICROVM_IMAGE_TYPE).values()))
+    assert 'Fn::GetAtt' in str(image['Properties']['EgressNetworkConnectors']), 'connector object must coerce to its ARN token'
 
 
 def test_invalid_memory_and_capabilities_rejected(stack_factory: Callable[[], Stack], app_source_dir: str) -> None:

@@ -41,8 +41,38 @@ def test_sample_image_props(tmp_path: Path) -> None:
 
 def test_stack_outputs_use_the_exact_keys_the_e2e_fixture_reads(tmp_path: Path) -> None:
     outputs = _synth(tmp_path).to_json().get('Outputs', {})
-    for key in ('MicrovmImageArn', 'MicrovmImageName', 'MicrovmExecutionRoleArn', 'IngressConnectorArn', 'EgressConnectorArn', 'MicrovmLogGroupName'):
+    for key in (
+        'MicrovmImageArn',
+        'MicrovmImageName',
+        'MicrovmExecutionRoleArn',
+        'IngressConnectorArn',
+        'EgressConnectorArn',
+        'VpcEgressConnectorArn',
+        'MicrovmLogGroupName',
+    ):
         assert key in outputs, f'missing stack output {key} (E2E fixture contract)'
+
+
+def test_sample_provisions_vpc_egress_connector_with_nat(tmp_path: Path) -> None:
+    template = _synth(tmp_path)
+    # One VPC egress connector, egress-only, MicroVm compute type.
+    template.resource_count_is('AWS::Lambda::NetworkConnector', 1)
+    template.has_resource_properties(
+        'AWS::Lambda::NetworkConnector',
+        {'Configuration': {'VpcEgressConfiguration': Match.object_like({'AssociatedComputeResourceTypes': ['MicroVm'], 'NetworkProtocol': 'IPv4'})}},
+    )
+    # NAT gateway so the build (routed through the connector) can reach public.ecr.aws + PyPI.
+    template.resource_count_is('AWS::EC2::NatGateway', 1)
+    template.resource_count_is('AWS::EC2::InternetGateway', 1)
+    template.has_resource_properties('AWS::EC2::FlowLog', {'ResourceType': 'VPC', 'TrafficType': 'REJECT'})
+    # The connector SG opens exactly 443 egress to the internet (deny-all otherwise).
+    template.has_resource_properties(
+        'AWS::EC2::SecurityGroup',
+        {'SecurityGroupEgress': Match.array_with([Match.object_like({'CidrIp': '0.0.0.0/0', 'FromPort': 443, 'ToPort': 443, 'IpProtocol': 'tcp'})])},
+    )
+    # The image bakes the connector ARN as its (build + runtime) egress path.
+    image = next(iter(template.find_resources('AWS::Lambda::MicrovmImage').values()))
+    assert 'Fn::GetAtt' in json.dumps(image['Properties']['EgressNetworkConnectors']), 'image must reference the VPC connector ARN'
 
 
 def test_execution_role_grants_both_model_providers_scoped(tmp_path: Path) -> None:

@@ -19,9 +19,21 @@ import pytest
 
 STACK_NAME = os.environ.get('MICROVM_STACK_NAME', 'LambdaMicrovmSampleStack')
 REGION = os.environ.get('MICROVM_REGION', 'us-east-1')
-IMAGE_CREATED_TIMEOUT_SECONDS = 20 * 60  # spike: build took ~165s; leave headroom
-VM_RUNNING_TIMEOUT_SECONDS = 5 * 60  # spike: RUNNING in ~15s
+IMAGE_CREATED_TIMEOUT_SECONDS = 20 * 60  # build observed ~165s; leave headroom
+VM_RUNNING_TIMEOUT_SECONDS = 5 * 60  # RUNNING observed in ~15s
 MAX_VM_DURATION_SECONDS = 900  # hard TTL backstop on every launch
+
+
+def create_auth_token(client: Any, microvm_id: str, *, allowed_ports: list[dict[str, Any]], expiration_in_minutes: int = 30) -> dict[str, str]:
+    """Mint a short-lived JWE token scoped to *allowed_ports* and return the endpoint header map
+    (use the value at ``'X-aws-proxy-auth'`` as the header). ``allowedPorts`` entries are the boto3
+    ``PortSpecification`` union — e.g. ``{'port': 8080}`` / ``{'range': {'startPort': .., 'endPort': ..}}``."""
+    response = client.create_microvm_auth_token(
+        microvmIdentifier=microvm_id,
+        allowedPorts=allowed_ports,
+        expirationInMinutes=expiration_in_minutes,
+    )
+    return dict(response['authToken'])
 
 
 @pytest.fixture(scope='session')
@@ -35,7 +47,8 @@ def stack_outputs() -> dict[str, str]:
     cloudformation = boto3.client('cloudformation', region_name=REGION)
     stacks = cloudformation.describe_stacks(StackName=STACK_NAME)['Stacks']
     outputs = {entry['OutputKey']: entry['OutputValue'] for entry in stacks[0]['Outputs']}
-    missing = {'MicrovmImageArn', 'MicrovmExecutionRoleArn', 'IngressConnectorArn', 'EgressConnectorArn', 'MicrovmLogGroupName'} - outputs.keys()
+    required = {'MicrovmImageArn', 'MicrovmExecutionRoleArn', 'IngressConnectorArn', 'VpcEgressConnectorArn', 'MicrovmLogGroupName'}
+    missing = required - outputs.keys()
     assert not missing, f'stack {STACK_NAME} is missing outputs: {missing} — deploy with `make deploy` first'
     return outputs
 
@@ -74,7 +87,10 @@ def running_microvm(microvm_client: Any, stack_outputs: dict[str, str], created_
         imageIdentifier=stack_outputs['MicrovmImageArn'],
         executionRoleArn=stack_outputs['MicrovmExecutionRoleArn'],
         ingressNetworkConnectors=[stack_outputs['IngressConnectorArn']],
-        egressNetworkConnectors=[stack_outputs['EgressConnectorArn']],
+        # Route egress through the customer-managed VPC connector (the sample VPC reaches the internet /
+        # Bedrock via a NAT gateway), not the AWS-managed INTERNET_EGRESS connector. The image also bakes
+        # this connector, so this is the explicit, belt-and-suspenders per-launch selection.
+        egressNetworkConnectors=[stack_outputs['VpcEgressConnectorArn']],
         idlePolicy={'autoResumeEnabled': True, 'maxIdleDurationSeconds': 900, 'suspendedDurationSeconds': 300},
         # RUNTIME logs are configured per-launch here (the image's Logging config only covers BUILD logs) —
         # without this, the running VM writes no CloudWatch stream. Stream to the same service-owned group.
@@ -98,11 +114,4 @@ def running_microvm(microvm_client: Any, stack_outputs: dict[str, str], created_
 @pytest.fixture()
 def auth_headers(microvm_client: Any, running_microvm: dict[str, Any]) -> dict[str, str]:
     """Short-lived JWE token scoped to port 8080 only."""
-    token_response = microvm_client.create_microvm_auth_token(
-        microvmIdentifier=running_microvm['microvmId'],
-        allowedPorts=[{'port': 8080}],
-        expirationInMinutes=30,
-    )
-    # authToken is a header map — the key is exactly 'X-aws-proxy-auth' (validated in the spike).
-    headers: dict[str, str] = dict(token_response['authToken'])
-    return headers
+    return create_auth_token(microvm_client, running_microvm['microvmId'], allowed_ports=[{'port': 8080}])
