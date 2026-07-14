@@ -9,7 +9,11 @@ copyright = "Copyright &copy; 2026 Ran Isenberg — MIT-0"
 nav = [
     { "Home" = "index.md" },
     { "Getting Started" = "getting_started.md" },
-    { "Construct" = "construct.md" },
+    { "Sample App" = "sample.md" },
+    { "Construct" = [
+        { "MicroVM Image" = "construct.md" },
+        { "Network Connector" = "custom_egress.md" },
+    ] },
     { "Contribution" = [
         { "Contributing" = "contributing.md" },
         { "Pipeline" = "pipeline.md" },

@@ -1,15 +1,16 @@
 # Contributing
 
-Contributions are welcome. This page covers the prerequisites and environment setup; the
-[Pipeline](pipeline.md) page describes what CI runs, and [Security](security.md) the guarantees to
-keep intact.
+Contributions are welcome. This project uses **[uv](https://docs.astral.sh/uv/)** for environment and
+dependency management and targets **Python 3.11+**. This page covers the prerequisites and environment
+setup; the [Pipeline](pipeline.md) page describes what CI runs, and [Security](security.md) the
+guarantees to keep intact.
 
 ## Prerequisites
 
 | Tool | Why | Notes |
 |------|-----|-------|
-| **Python 3.11+** | the library + tests | authored/tested on **3.14**; CI runs 3.14 (`uv python install 3.14`) |
-| **[uv](https://docs.astral.sh/uv/)** | venv + dependency management | drives every Makefile target |
+| **Python 3.11+** | the library + tests | **3.11 is the minimum** (`requires-python = ">=3.11"`); authored/tested on 3.14, which CI runs (`uv python install 3.14`) |
+| **[uv](https://docs.astral.sh/uv/)** | venv + dependency management | **required** — drives every Makefile target (`make dev` runs `uv sync`) |
 | **Node.js** | the AWS CDK CLI via `npx aws-cdk` | CI uses Node 24; no global `cdk` install needed |
 | **git** | version control | |
 | **AWS account + credentials** | **only** for `make deploy` / `make e2e` | not needed for lint, unit tests, or synth |

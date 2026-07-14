@@ -14,16 +14,19 @@ cdk-nag. This page summarizes the guarantees the construct provides.
 - **VM execution role** — the identity a *running* MicroVM assumes. Created with logs-only
   permissions scoped to the image's log group; the consumer (or the sample) layers workload
   permissions on top (the sample grants Bedrock on the specific inference-profile / model ARNs).
-- **`grant_run(principal)`** — attaches the runtime actions (`lambda:RunMicrovm`, `SuspendMicrovm`,
-  `ResumeMicrovm`, `TerminateMicrovm`, `CreateMicrovmAuthToken`, `GetMicrovm`, `ListMicrovms`) scoped
-  to the specific image ARN, plus `iam:PassRole` limited to the VM execution role. No `*`.
+- **`grant_run(principal)`** — lets a runtime caller (launcher Lambda / ECS task / CI role) **launch and
+  operate a VM from this image, nothing broader**: `lambda:RunMicrovm` scoped to the specific image ARN;
+  the VM lifecycle + auth-token actions (`SuspendMicrovm`, `ResumeMicrovm`, `TerminateMicrovm`,
+  `CreateMicrovmAuthToken`, `GetMicrovm`, `ListMicrovms`) scoped to this account+region; and `iam:PassRole`
+  limited to the VM execution role. No image-build/CloudFormation perms, no `*`. See the
+  [MicroVM Image](construct.md) page for the full breakdown.
 
 ## Secrets — never in the image
 
 `EnvironmentVariables` are **baked into the snapshot** and shared by every VM launched from that
-image, so **secrets must never go there**. The construct validates env input and documents the safe
-pattern: pass secret *references* per-VM via `runHookPayload`, or fetch from SSM Parameter Store /
-Secrets Manager at runtime inside the `/run` hook using the VM execution role.
+image, so **secrets must never go there**. This can't be enforced (a secret value under an innocent
+key is undetectable), so it's guidance: pass secret *references* per-VM via `runHookPayload`, or fetch
+from SSM Parameter Store / Secrets Manager at runtime inside the `/run` hook using the VM execution role.
 
 ## Secure defaults
 
@@ -32,10 +35,10 @@ Secrets Manager at runtime inside the `/run` hook using the VM execution role.
 | Architecture | `ARM_64` (the only value the service accepts today; anything else raises) |
 | OS capabilities | `[]` — `ALL` is a documented privilege escalation you must opt into |
 | Logging | CloudWatch enabled, group pinned to `/aws/lambda/microvms/<name>`, retention 2 weeks |
-| Egress | internet by default; VPC egress is opt-in (Phase 3) |
-| Auth tokens | short expiry, `allowedPorts=[8080]` (minted by the caller/E2E fixture) |
+| Egress | internet by default; opt-in VPC egress via `MicrovmNetworkConnector` (BYO-VPC) |
+| Auth tokens | short expiry, `allowedPorts=[{"port": 8080}]` (minted by the caller/E2E fixture) |
 | Max TTL | `maximumDurationInSeconds` always set at launch as a hard cost/lifetime backstop |
-| Env vars | `{}` — secrets rejected |
+| Env vars | `{}` — snapshotted & shared across every VM; **never put secrets here** (not enforceable — fetch them at runtime from SSM/Secrets Manager, or pass per-VM via `runHookPayload`) |
 
 Invalid or out-of-range inputs (name regex, architecture, memory tier, env keys, connector count)
 **raise at synth**, so a template the API would reject is never produced.

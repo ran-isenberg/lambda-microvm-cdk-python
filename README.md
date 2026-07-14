@@ -19,8 +19,8 @@ environments, and multi-tenant CI. Secure defaults, every AWS knob overridable, 
 [![Twitter Follow](https://img.shields.io/twitter/follow/IsenbergRan?label=Follow&style=social)](https://twitter.com/RanBuilder)
 [![Website](https://img.shields.io/badge/Website-www.ranthebuilder.cloud-blue)](https://ranthebuilder.cloud/)
 
-> **Status:** early development.
-> Repo: `lambda-microvm-cdk-python` · PyPI package (planned): `lambda-microvm-cdk`.
+> **Status:** early development (targets a preview AWS API).
+> Repo: `lambda-microvm-cdk-python` · [PyPI: `lambda-microvm-cdk`](https://pypi.org/project/lambda-microvm-cdk/).
 
 ## What it does
 
@@ -31,8 +31,8 @@ image — with secure defaults and an `overrides` escape hatch for anything not 
 
 *Running* a MicroVM (run / suspend / resume / terminate) is a **runtime API call**, not
 CloudFormation — so it's driven with **boto3** from your app or the E2E fixture, using the
-construct's typed properties (image ARN, execution role, connector ARNs, log group). No launcher
-Lambda / API Gateway / WAF in the current scope (a thin launcher is a deferred, opt-in add-on).
+construct's typed properties (image ARN, execution role, connector ARNs, log group). There is no
+launcher Lambda / API Gateway / WAF — you call the runtime API directly.
 
 ### Two planes
 
@@ -40,7 +40,7 @@ Lambda / API Gateway / WAF in the current scope (a thin launcher is a deferred, 
 flowchart LR
     subgraph CFN["Declarative — CloudFormation (this construct)"]
         IMG["AWS::Lambda::MicrovmImage<br/>(LambdaMicroVM)"]
-        NC["AWS::Lambda::NetworkConnector<br/>(VPC egress — Phase 3)"]
+        NC["AWS::Lambda::NetworkConnector<br/>(VPC egress — MicrovmNetworkConnector)"]
     end
     subgraph RT["Runtime API — boto3 (your app / E2E fixture)"]
         RUN["RunMicrovm · Suspend · Resume · Terminate<br/>CreateMicrovmAuthToken"]
@@ -52,6 +52,21 @@ Images and connectors are declarative CDK; the *running* instance is runtime-onl
 construct's outputs.
 
 ## Quickstart
+
+### Install
+
+Add the package to your CDK app (Python 3.11+). `aws-cdk-lib`, `constructs`, and the
+`aws-cdk-aws-ec2-alpha` module (used by the VPC-egress construct) are pulled in as dependencies.
+
+```bash
+pip install lambda-microvm-cdk
+# or
+uv add lambda-microvm-cdk
+# or
+poetry add lambda-microvm-cdk
+```
+
+### Use
 
 ```python
 from aws_cdk import Stack
@@ -75,6 +90,71 @@ class MyStack(Stack):
         vm.grant_run(caller)  # attach least-priv RunMicrovm* to a runtime-caller principal
 ```
 
+### Custom VPC egress (optional)
+
+Route the VM's outbound traffic through **your VPC** with `MicrovmNetworkConnector`. It's **BYO-VPC** —
+you own the VPC (and whether it has internet egress). Pass the connector straight to
+`egress_connectors=[...]`; the security group's rules **are** the egress policy (deny-all by default).
+
+```mermaid
+flowchart LR
+    vm["MicroVM<br/>image build + runtime"]
+
+    subgraph vpc["Your VPC — BYO · REJECT flow logs"]
+        direction TB
+        subgraph priv["Private subnets · PRIVATE_WITH_EGRESS"]
+            eni["Connector ENIs<br/>SG = egress policy:<br/>deny-all + allow tcp/443"]
+        end
+        subgraph pub["Public subnets"]
+            nat["NAT Gateway + EIP"]
+        end
+        igw["Internet Gateway"]
+    end
+
+    net(("Internet<br/>public.ecr.aws · PyPI · Bedrock"))
+
+    vm -->|"outbound via connector"| eni
+    eni -->|"0.0.0.0/0 → NAT"| nat
+    nat -->|"0.0.0.0/0 → IGW"| igw
+    igw <--> net
+```
+
+The **security group** is the only egress gate (deny-all + explicit allows, stateful); the **NAT gateway
+has no rules** — it just gives the private subnets a path to the internet. Full architecture +
+fully-private (no-NAT) option: **[Custom Egress docs](https://ran-isenberg.github.io/lambda-microvm-cdk-python/custom_egress/)**.
+
+> **Build-time vs run-time egress.** `egress_connectors` is the **image build's** egress — the build
+> runs your `Dockerfile` in a MicroVM, so the VPC must reach your base image + package repos (a **NAT
+> gateway**, or private mirrors). A locked-down VPC with no route to those fails the build. For VPC egress
+> only at *runtime*, leave `egress_connectors` empty and pass the connector to `run_microvm` instead.
+
+```python
+import aws_cdk.aws_ec2 as ec2
+from lambda_microvm_cdk import LambdaMicroVM, MicrovmNetworkConnector
+
+# BYO VPC with a NAT gateway so the image build can reach public.ecr.aws + PyPI.
+vpc = ec2.Vpc(self, "Vpc", max_azs=2, nat_gateways=1)  # or an aws_ec2_alpha.VpcV2 — see sample/
+
+connector = MicrovmNetworkConnector(
+    self,
+    "Egress",
+    vpc=vpc,  # deny-all egress SG by default
+)
+connector.security_group.add_egress_rule(
+    ec2.Peer.any_ipv4(),
+    ec2.Port.tcp(443),
+    "HTTPS egress",
+)
+vm = LambdaMicroVM(
+    self,
+    "Agent",
+    source="microvm_app",
+    egress_connectors=[connector],  # accepts the connector object or a raw ARN string
+)
+```
+
+See [`sample/sample_stack.py`](sample/sample_stack.py) for a full `VpcV2` + NAT-gateway example.
+
 ### Build & run flow
 
 ```mermaid
@@ -88,7 +168,7 @@ sequenceDiagram
     Svc-->>CDK: image CREATING -> CREATED (snapshot)
     App->>Svc: RunMicrovm(imageArn, executionRoleArn, connectors, maxDuration)
     Svc-->>App: microvmId, endpoint (PENDING -> RUNNING)
-    App->>Svc: CreateMicrovmAuthToken(allowedPorts=[8080])
+    App->>Svc: CreateMicrovmAuthToken(allowedPorts=[{port:8080}])
     App->>App: HTTPS request (X-aws-proxy-auth) -> assert
     App->>Svc: TerminateMicrovm (guaranteed in teardown)
 ```
@@ -97,16 +177,18 @@ sequenceDiagram
 
 [`sample/`](sample/) is a deployable CDK app whose MicroVM runs a model worker on **Amazon Bedrock
 (us-east-1)** — **Amazon Nova 2 Lite by default** (boto3 Converse), with **Claude Opus 4.8 opt-in**
-(`MODEL_PROVIDER=anthropic`). The worker is tiered so the library's tests never depend on the model:
+(`MODEL_PROVIDER=anthropic`). The worker is tiered so the deterministic gate never depends on the model.
+The E2E suite runs **two tests** against one VM:
 
-1. **`echo`** — deterministic, no model. **This is what E2E asserts on.**
-2. **`bedrock`** — one model call (Nova default / Opus opt-in).
-3. **`agent`** — Claude Code headless (opt-in enhancement, not required by the sample).
+1. **`echo`** — deterministic, no model. **The E2E gate.**
+2. **`bedrock`** — one model call (Nova default / Opus opt-in); the E2E test asks the model to sum two
+   random numbers and asserts the reply contains the sum.
+3. **`agent`** — Claude Code headless (opt-in enhancement, not exercised by the E2E tests).
 
-## Getting started
+## Local development
 
-Uses [uv](https://docs.astral.sh/uv/), [ruff](https://docs.astral.sh/ruff/), and the AWS CDK CLI via
-`npx` (see the [Makefile](Makefile)).
+For working on the construct itself (not just consuming it). Uses [uv](https://docs.astral.sh/uv/),
+[ruff](https://docs.astral.sh/ruff/), and the AWS CDK CLI via `npx` (see the [Makefile](Makefile)).
 
 ```bash
 make dev        # uv sync (venv + dev deps)
